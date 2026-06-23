@@ -46,6 +46,13 @@ export const metadata: Metadata = {
 	},
 	icons: {
 		icon: "/favicon.svg",
+		apple: "/favicon.svg",
+	},
+	manifest: "/manifest.json",
+	appleWebApp: {
+		capable: true,
+		statusBarStyle: "default",
+		title: "Intel Monitor",
 	},
 };
 

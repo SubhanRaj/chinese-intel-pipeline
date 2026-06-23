@@ -1,0 +1,17 @@
+{
+  "name": "Chinese Intel Monitor",
+  "short_name": "Intel Monitor",
+  "description": "Daily AI-powered intelligence briefings from seven Chinese provincial newspapers.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#dc2626",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

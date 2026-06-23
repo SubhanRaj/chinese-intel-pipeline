@@ -27,16 +27,21 @@ function getCSTDateParts(): { yyyy: string; mm: string; dd: string } {
 	return { yyyy, mm, dd };
 }
 
-function buildUrls(yyyy: string, mm: string, dd: string): string[] {
+interface Source {
+	name: string;
+	url: string;
+}
+
+function buildSources(yyyy: string, mm: string, dd: string): Source[] {
 	const yyyymmdd = `${yyyy}${mm}${dd}`;
 	return [
-		`https://yndaily.yunnan.cn/html/${yyyy}/${mm}${dd}/${yyyymmdd}_001/${yyyymmdd}_001_6618.html#0`,
-		`https://4g.scdaily.cn/wap/scrb/${yyyymmdd}/index.html`,
-		`https://ssw.gxrb.com.cn/json/interface/epaper/api.php?#p=001`,
-		`https://h5cgi.voc.com.cn/hnrbdzb/#/`,
-		`https://fjrb.fjdaily.com/pad/col/${yyyy}${mm}/${dd}/node_01.html`,
-		`https://epaper.nfnews.com/m/ipaper/nfrb/html/${yyyy}${mm}/${dd}/node_A05.html#/`,
-		`https://news.hndaily.cn/h5/html5/${yyyy}-${mm}/${dd}/node_58471.htm`,
+		{ name: 'Yunnan Daily',  url: `https://yndaily.yunnan.cn/html/${yyyy}/${mm}${dd}/${yyyymmdd}_001/${yyyymmdd}_001_6618.html#0` },
+		{ name: 'Sichuan Daily', url: `https://4g.scdaily.cn/wap/scrb/${yyyymmdd}/index.html` },
+		{ name: 'Guangxi Daily', url: `https://ssw.gxrb.com.cn/json/interface/epaper/api.php?#p=001` },
+		{ name: 'Hunan Daily',   url: `https://h5cgi.voc.com.cn/hnrbdzb/#/` },
+		{ name: 'Fujian Daily',  url: `https://fjrb.fjdaily.com/pad/col/${yyyy}${mm}/${dd}/node_01.html` },
+		{ name: 'Nanfang Daily', url: `https://epaper.nfnews.com/m/ipaper/nfrb/html/${yyyy}${mm}/${dd}/node_A05.html#/` },
+		{ name: 'Hainan Daily',  url: `https://news.hndaily.cn/h5/html5/${yyyy}-${mm}/${dd}/node_58471.htm` },
 	];
 }
 
@@ -48,9 +53,10 @@ interface ScrapedArticle {
 	title: string;
 	full_text: string;
 	url: string;
+	source: string;
 }
 
-async function scrapeUrl(browser: Browser, startUrl: string): Promise<ScrapedArticle[]> {
+async function scrapeUrl(browser: Browser, startUrl: string, sourceName: string): Promise<ScrapedArticle[]> {
 	const page = await browser.newPage();
 
 	await page.setRequestInterception(true);
@@ -90,7 +96,7 @@ async function scrapeUrl(browser: Browser, startUrl: string): Promise<ScrapedArt
 		const indexText = await page.evaluate(() => document.body.innerText);
 		const indexTitle = await page.evaluate(() => document.title);
 		if (indexText.trim()) {
-			articles.push({ title: indexTitle || startUrl, full_text: indexText.trim(), url: startUrl });
+			articles.push({ title: indexTitle || startUrl, full_text: indexText.trim(), url: startUrl, source: sourceName });
 		}
 
 		// Sub-pages as individual articles
@@ -107,7 +113,7 @@ async function scrapeUrl(browser: Browser, startUrl: string): Promise<ScrapedArt
 				const text = await subPage.evaluate(() => document.body.innerText);
 				const title = await subPage.evaluate(() => document.title);
 				if (text.trim().length > 100) {
-					articles.push({ title: title || link, full_text: text.trim(), url: link });
+					articles.push({ title: title || link, full_text: text.trim(), url: link, source: sourceName });
 				}
 			} catch { /* non-fatal */ } finally {
 				await subPage.close();
@@ -132,6 +138,7 @@ Return ONLY a valid JSON array — no markdown, no code fences, no explanation. 
 - "summary": 2–3 sentence geopolitical analysis in English (flag high-significance items with [HIGH])
 - "full_text_en": complete, faithful English translation of the full_text field
 - "url": copy the original URL unchanged
+- "category": classify into exactly one of: "Political", "Military", "Economic", "Technology", "Social", "Foreign Affairs"
 
 Your output must be parseable by JSON.parse() with no preprocessing.`;
 
@@ -140,6 +147,7 @@ interface AiArticle {
 	summary: string;
 	full_text_en: string;
 	url: string;
+	category: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -183,7 +191,7 @@ async function analyseWithWorkersAI(ai: any, articles: ScrapedArticle[]): Promis
 
 	// Hard fallback: one article per scraped item with raw title, no summary
 	console.log('[AI FALLBACK] Could not parse JSON array from response');
-	return articles.map((a) => ({ title: a.title, summary: 'Analysis unavailable.', url: a.url }));
+	return articles.map((a) => ({ title: a.title, summary: 'Analysis unavailable.', full_text_en: '', url: a.url, category: 'Uncategorized' }));
 }
 
 // ---------- email ----------
@@ -231,11 +239,11 @@ async function runPipeline(env: Env): Promise<string> {
 		return msg;
 	}
 
-	const urls = buildUrls(yyyy, mm, dd);
+	const sources = buildSources(yyyy, mm, dd);
 	const browser = await puppeteer.launch(env.BROWSER);
 	const scrapedArticles: ScrapedArticle[] = [];
-	for (const url of urls) {
-		const arts = await scrapeUrl(browser, url);
+	for (const { url, name } of sources) {
+		const arts = await scrapeUrl(browser, url, name);
 		scrapedArticles.push(...arts);
 	}
 	await browser.close();
@@ -276,6 +284,8 @@ async function runPipeline(env: Env): Promise<string> {
 			fullText: scraped?.full_text,
 			fullTextEn: ai.full_text_en,
 			url: ai.url || scraped?.url,
+			category: ai.category ?? null,
+			source: scraped?.source ?? null,
 			isPreserved: 0,
 		});
 	}

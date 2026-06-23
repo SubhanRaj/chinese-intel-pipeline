@@ -76,7 +76,8 @@ Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) is prompted to return a 
     "title": "English translation of the Chinese headline",
     "summary": "2–3 sentence geopolitical analysis [HIGH if significant]",
     "full_text_en": "Complete faithful English translation of the article body",
-    "url": "original source URL"
+    "url": "original source URL",
+    "category": "Political | Military | Economic | Technology | Social | Foreign Affairs"
   }
 ]
 ```
@@ -108,6 +109,11 @@ New briefings use the per-article card layout instead.
 - **Print Briefing** — `window.print()` with sidebar hidden via `print:hidden`
 - **Dark / light mode** — toggle in sidebar (defaults to light); Inter body + DM Serif Display for headings
 - **HIGH badge** — articles flagged `[HIGH]` by the AI get a red destructive badge
+- **Category tags** — AI classifies each article into one of: Political, Military, Economic, Technology, Social, Foreign Affairs; colour-coded badge on every card and in the drawer header
+- **Source attribution** — each card shows which provincial paper the article came from (e.g. Yunnan Daily, Sichuan Daily); stored in `intel_articles.source`
+- **Search** — live client-side search filters cards in both the daily briefing view and the preserved archive by title, summary, or source; clears instantly
+- **Preserved archive view** — dedicated full-page view (Preserved section header in the sidebar) showing all preserved articles across all dates with date stamps; fully searchable
+- **PWA / installable** — `manifest.json` wired into Next.js metadata so the dashboard installs to the home screen on iOS and Android; theme colour matches the red brand accent
 - **Mobile responsive** — sidebar collapses off-screen on mobile; a hamburger button in the top bar slides it in as an overlay; selecting a date or article auto-closes it; drawer goes full-width on small screens; card action row and drawer footer stack/wrap to remain tappable
 
 ## Security
@@ -173,6 +179,8 @@ chinese-intel-pipeline/
 | `full_text` | TEXT | Original Chinese body text |
 | `full_text_en` | TEXT | Complete English translation |
 | `url` | TEXT | Source article URL |
+| `category` | TEXT | AI-assigned: Political / Military / Economic / Technology / Social / Foreign Affairs |
+| `source` | TEXT | Paper name (e.g. Yunnan Daily) |
 | `is_preserved` | INTEGER | 0 = normal, 1 = exempt from 30-day cleanup |
 | `created_at` | TEXT | datetime('now') default |
 
