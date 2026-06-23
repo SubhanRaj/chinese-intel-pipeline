@@ -100,12 +100,25 @@ New briefings use the per-article card layout instead.
 
 ## Dashboard features
 
-- **Article cards** — title, AI geopolitical summary, Read Full Article button, Source link
+- **Article cards** — title (DM Serif Display), AI geopolitical summary, Read Full Article button, Source link
 - **Slide-in drawer** — opens on "Read Full Article"; shows translated title, summary, full English translation, and a **中文 Source** toggle to reveal the original Chinese text
-- **Preserve / Delete** — per-article server actions; preserved articles are exempt from the 30-day cleanup
+- **Preserve / Delete** — per-article server actions; preserved articles are exempt from the 30-day cleanup, the Delete button is locked and replaced with a lock icon while preserved
+- **Preserved sidebar section** — all preserved articles appear in a dedicated section at the top of the sidebar regardless of date; clicking opens the drawer directly
 - **Print Briefing** — `window.print()` with sidebar hidden via `print:hidden`
-- **Dark / light mode** — toggle in sidebar (defaults to light); Playfair Display serif for headings
+- **Dark / light mode** — toggle in sidebar (defaults to light); Inter body + DM Serif Display for headings
 - **HIGH badge** — articles flagged `[HIGH]` by the AI get a red destructive badge
+
+## Security
+
+The dashboard is intentionally read-only except for two scoped mutations.
+
+| Surface | Protection |
+|---|---|
+| Server Actions (`togglePreserve`, `deleteArticle`) | Input validated server-side: ID must be a positive integer; `deleteArticle` re-checks `is_preserved = 0` in D1 before executing — client-side lock cannot be bypassed |
+| URL rendering | All `href` values pass through `safeUrl()` which only allows `http://` and `https://` schemes — prevents `javascript:` injection |
+| Content rendering | Article text rendered as React JSX (text nodes), never as `dangerouslySetInnerHTML` — XSS not possible |
+| Secrets | API keys (`RESEND_API_KEY`, etc.) stored as Wrangler secrets (encrypted at rest, injected at runtime); never appear in source or git history. `.dev.vars` is `.gitignore`d in both packages |
+| Read-only public surface | No route accepts POST/PUT/PATCH from external callers; Next.js Server Actions are the only write path and are not accessible as raw HTTP endpoints |
 
 ## Project layout
 

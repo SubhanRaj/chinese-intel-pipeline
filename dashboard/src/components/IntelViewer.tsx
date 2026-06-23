@@ -17,11 +17,13 @@ import {
 	IconX,
 	IconArticle,
 	IconLanguage,
+	IconLock,
 } from '@tabler/icons-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { togglePreserve, deleteArticle } from '@/app/actions';
+import { safeUrl } from '@/lib/utils';
 import type { IntelBriefing, IntelArticle } from '@/db/schema';
 
 const MarkdownRenderer = dynamic(() => import('./MarkdownRenderer'), { ssr: false });
@@ -56,6 +58,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 
 	const hasArticles = selectedArticles.length > 0;
 	const hasMarkdown = selected?.aiAnalysisMarkdown && selected.aiAnalysisMarkdown !== 'articles';
+	const preservedArticles = articles.filter((a) => a.isPreserved);
 
 	// ── Sidebar ───────────────────────────────────────────────────────────────
 	const sidebar = (
@@ -79,34 +82,71 @@ export default function IntelViewer({ briefings, articles }: Props) {
 				</button>
 			</div>
 
-			<nav className="flex-1 overflow-y-auto py-2 px-2">
-				{briefings.length === 0 ? (
-					<p className="text-sm text-slate-500 text-center mt-8 px-4 leading-relaxed">
-						No briefings on record yet.
-					</p>
-				) : (
-					briefings.map((b) => {
-						const isActive = selectedId === b.id;
-						return (
+			<nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
+				{/* ── Preserved articles ───────────────────────────────── */}
+				{preservedArticles.length > 0 && (
+					<div>
+						<p className="px-3 mb-1 text-[10px] font-bold tracking-widest uppercase text-amber-600 dark:text-amber-500 flex items-center gap-1.5">
+							<IconBookmarkFilled size={11} />
+							Preserved
+						</p>
+						{preservedArticles.map((a) => (
 							<button
-								key={b.id}
-								onClick={() => { setSelectedId(b.id); setDrawerArticle(null); }}
-								className={[
-									'w-full text-left rounded-lg px-4 py-3 mb-1 flex items-center gap-3 transition-all duration-100',
-									isActive
-										? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
-										: 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200',
-								].join(' ')}
+								key={a.id}
+								onClick={() => setDrawerArticle(a)}
+								className="w-full text-left rounded-lg px-3 py-2 mb-0.5 flex items-start gap-2.5 transition-all duration-100 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 group"
 							>
-								<IconCalendar size={16} className="shrink-0 text-slate-400 dark:text-slate-500" />
-								<span className="flex-1 text-sm font-mono font-medium tracking-wide">
-									{b.trackingDate}
-								</span>
-								{isActive && <IconChevronRight size={14} className="text-red-600 dark:text-red-500 shrink-0" />}
+								<IconBookmark size={13} className="shrink-0 mt-0.5 text-amber-500" />
+								<div className="flex-1 min-w-0">
+									<p className="text-xs font-medium leading-snug truncate">
+										{a.title ?? 'Untitled'}
+									</p>
+									<p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">
+										{a.trackingDate}
+									</p>
+								</div>
+								<IconChevronRight size={11} className="shrink-0 mt-1 opacity-0 group-hover:opacity-100 text-slate-400 transition-opacity" />
 							</button>
-						);
-					})
+						))}
+						<div className="mt-3 border-t border-slate-200 dark:border-slate-800" />
+					</div>
 				)}
+
+				{/* ── Date list ────────────────────────────────────────── */}
+				<div>
+					{briefings.length > 0 && (
+						<p className="px-3 mb-1 text-[10px] font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500">
+							Briefings
+						</p>
+					)}
+					{briefings.length === 0 ? (
+						<p className="text-sm text-slate-500 text-center mt-8 px-4 leading-relaxed">
+							No briefings on record yet.
+						</p>
+					) : (
+						briefings.map((b) => {
+							const isActive = selectedId === b.id;
+							return (
+								<button
+									key={b.id}
+									onClick={() => { setSelectedId(b.id); setDrawerArticle(null); }}
+									className={[
+										'w-full text-left rounded-lg px-3 py-2.5 mb-0.5 flex items-center gap-3 transition-all duration-100',
+										isActive
+											? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+											: 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200',
+									].join(' ')}
+								>
+									<IconCalendar size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
+									<span className="flex-1 text-sm font-mono font-medium tracking-wide">
+										{b.trackingDate}
+									</span>
+									{isActive && <IconChevronRight size={13} className="text-red-600 dark:text-red-500 shrink-0" />}
+								</button>
+							);
+						})
+					)}
+				</div>
 			</nav>
 
 			<div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800">
@@ -285,9 +325,9 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 							<IconArticle size={15} />
 							Read Full Article
 						</button>
-						{article.url && (
+						{safeUrl(article.url) && (
 							<a
-								href={article.url}
+								href={safeUrl(article.url)!}
 								target="_blank"
 								rel="noopener noreferrer"
 								className="inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors hover:underline underline-offset-2"
@@ -317,11 +357,18 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 						<Button
 							variant="ghost"
 							size="sm"
-							onClick={() => onDelete(article.id)}
-							className="h-8 px-3 text-sm gap-1.5 text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+							onClick={() => !article.isPreserved && onDelete(article.id)}
+							disabled={!!article.isPreserved}
+							className={[
+								'h-8 px-3 text-sm gap-1.5',
+								article.isPreserved
+									? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
+									: 'text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400',
+							].join(' ')}
+							title={article.isPreserved ? 'Unpreserve before deleting' : 'Delete'}
 						>
-							<IconTrash size={15} />
-							Delete
+							{article.isPreserved ? <IconLock size={15} /> : <IconTrash size={15} />}
+							{article.isPreserved ? 'Locked' : 'Delete'}
 						</Button>
 					</div>
 				</div>
@@ -407,9 +454,9 @@ function ArticleDrawer({ article, onClose }: DrawerProps) {
 								<h2 className="font-serif text-2xl text-slate-900 dark:text-slate-100 leading-snug">
 									{article.title}
 								</h2>
-								{article.url && (
+								{safeUrl(article.url) && (
 									<a
-										href={article.url}
+										href={safeUrl(article.url)!}
 										target="_blank"
 										rel="noopener noreferrer"
 										className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline underline-offset-2 break-all"
