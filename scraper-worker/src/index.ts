@@ -215,83 +215,104 @@ async function sendEmail(
 	}
 }
 
-// ---------- scheduled handler ----------
+// ---------- shared pipeline ----------
+
+async function runPipeline(env: Env): Promise<string> {
+	const { yyyy, mm, dd } = getCSTDateParts();
+	const trackingDate = `${yyyy}-${mm}-${dd}`;
+	const db = drizzle(env.DB);
+
+	// Idempotency check — skip if we already ran today
+	const existing = await db
+		.select()
+		.from(intelBriefings)
+		.where(eq(intelBriefings.trackingDate, trackingDate))
+		.limit(1);
+
+	if (existing.length > 0 && existing[0].aiAnalysisMarkdown) {
+		const msg = `Already processed ${trackingDate}, skipping.`;
+		console.log(msg);
+		return msg;
+	}
+
+	const urls = buildUrls(yyyy, mm, dd);
+	console.log(`Scraping ${urls.length} sources for ${trackingDate}…`);
+
+	const browser = await puppeteer.launch(env.BROWSER);
+	const scrapedParts: string[] = [];
+
+	for (const url of urls) {
+		console.log(`Scraping: ${url}`);
+		try {
+			const text = await scrapeUrl(browser, url);
+			scrapedParts.push(text);
+		} catch (err) {
+			scrapedParts.push(`[FAILED ${url}]: ${String(err)}`);
+		}
+	}
+
+	await browser.close();
+
+	const rawScrapedText = scrapedParts.join('\n\n==========\n\n');
+	console.log(`Total scraped characters: ${rawScrapedText.length}`);
+
+	console.log('Sending to Claude for analysis…');
+	const aiAnalysisMarkdown = await analyseWithClaude(env.ANTHROPIC_API_KEY, rawScrapedText);
+
+	// Upsert into D1
+	await db
+		.insert(intelBriefings)
+		.values({ trackingDate, rawScrapedText, aiAnalysisMarkdown, emailStatus: 0 })
+		.onConflictDoUpdate({
+			target: intelBriefings.trackingDate,
+			set: { rawScrapedText, aiAnalysisMarkdown, emailStatus: 0 },
+		});
+
+	console.log('Saved to D1.');
+
+	if (env.ENABLE_EMAIL === 'true') {
+		console.log('Email dispatch enabled — sending via Resend…');
+		try {
+			await sendEmail(
+				env.RESEND_API_KEY,
+				env.RESEND_FROM_EMAIL,
+				env.RESEND_TO_EMAIL,
+				trackingDate,
+				aiAnalysisMarkdown,
+			);
+
+			await db
+				.update(intelBriefings)
+				.set({ emailStatus: 1 })
+				.where(eq(intelBriefings.trackingDate, trackingDate));
+
+			console.log('Email sent successfully.');
+		} catch (err) {
+			console.error('Email send failed (briefing saved):', err);
+		}
+	} else {
+		console.log('Email dispatch is currently disabled via ENABLE_EMAIL flag.');
+	}
+
+	return `Scraper pipeline completed for ${trackingDate}.`;
+}
+
+// ---------- handlers ----------
 
 export default {
+	async fetch(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+		console.log('Manual HTTP trigger received. Starting scraper execution…');
+		try {
+			const result = await runPipeline(env);
+			return new Response(result, { status: 200, headers: { 'Content-Type': 'text/plain' } });
+		} catch (err) {
+			console.error('Pipeline error:', err);
+			return new Response(`Scraper error: ${String(err)}`, { status: 500, headers: { 'Content-Type': 'text/plain' } });
+		}
+	},
+
 	async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
-		const { yyyy, mm, dd } = getCSTDateParts();
-		const trackingDate = `${yyyy}-${mm}-${dd}`;
-		const db = drizzle(env.DB);
-
-		// Idempotency check — skip if we already ran today
-		const existing = await db
-			.select()
-			.from(intelBriefings)
-			.where(eq(intelBriefings.trackingDate, trackingDate))
-			.limit(1);
-
-		if (existing.length > 0 && existing[0].aiAnalysisMarkdown) {
-			console.log(`Already processed ${trackingDate}, skipping.`);
-			return;
-		}
-
-		const urls = buildUrls(yyyy, mm, dd);
-		console.log(`Scraping ${urls.length} sources for ${trackingDate}…`);
-
-		const browser = await puppeteer.launch(env.BROWSER);
-		const scrapedParts: string[] = [];
-
-		for (const url of urls) {
-			console.log(`Scraping: ${url}`);
-			try {
-				const text = await scrapeUrl(browser, url);
-				scrapedParts.push(text);
-			} catch (err) {
-				scrapedParts.push(`[FAILED ${url}]: ${String(err)}`);
-			}
-		}
-
-		await browser.close();
-
-		const rawScrapedText = scrapedParts.join('\n\n==========\n\n');
-		console.log(`Total scraped characters: ${rawScrapedText.length}`);
-
-		console.log('Sending to Claude for analysis…');
-		const aiAnalysisMarkdown = await analyseWithClaude(env.ANTHROPIC_API_KEY, rawScrapedText);
-
-		// Upsert into D1
-		await db
-			.insert(intelBriefings)
-			.values({ trackingDate, rawScrapedText, aiAnalysisMarkdown, emailStatus: 0 })
-			.onConflictDoUpdate({
-				target: intelBriefings.trackingDate,
-				set: { rawScrapedText, aiAnalysisMarkdown, emailStatus: 0 },
-			});
-
-		console.log('Saved to D1.');
-
-		if (env.ENABLE_EMAIL === 'true') {
-			console.log('Email dispatch enabled — sending via Resend…');
-			try {
-				await sendEmail(
-					env.RESEND_API_KEY,
-					env.RESEND_FROM_EMAIL,
-					env.RESEND_TO_EMAIL,
-					trackingDate,
-					aiAnalysisMarkdown,
-				);
-
-				await db
-					.update(intelBriefings)
-					.set({ emailStatus: 1 })
-					.where(eq(intelBriefings.trackingDate, trackingDate));
-
-				console.log('Email sent successfully.');
-			} catch (err) {
-				console.error('Email send failed (briefing saved):', err);
-			}
-		} else {
-			console.log('Email dispatch is currently disabled via ENABLE_EMAIL flag.');
-		}
+		console.log('Automated cron trigger fired. Starting scraper execution…');
+		await runPipeline(env);
 	},
 };
