@@ -241,6 +241,6 @@ The Puppeteer block in `scraper-worker/src/index.ts` is commented out while the 
 | Email (optional) | Resend API |
 | Dashboard | Next.js 16 App Router deployed as Cloudflare Worker via `@opennextjs/cloudflare` |
 | Styling | Tailwind CSS v4 + `@tailwindcss/typography` · Shadcn UI (base-ui variant) |
-| Fonts | Playfair Display (serif headings) + Geist Sans/Mono — via `next/font/google` |
+| Fonts | DM Serif Display (date + article titles) + Inter (UI/body) + Geist Mono — via `next/font/google` |
 | Icons | Tabler Icons (`@tabler/icons-react`) |
 | Markdown | `react-markdown` (client-only, `next/dynamic` + `ssr:false`) — legacy briefings only |
