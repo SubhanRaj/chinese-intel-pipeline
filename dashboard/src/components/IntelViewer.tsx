@@ -381,13 +381,13 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 				)}
 
 				{/* Action row */}
-				<div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+				<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-2 gap-2 border-t border-slate-100 dark:border-slate-800">
 					<div className="flex items-center gap-4">
 						<button
 							onClick={() => onReadFull(article)}
-							className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+							className="inline-flex items-center gap-2 text-base font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors py-1"
 						>
-							<IconArticle size={15} />
+							<IconArticle size={18} />
 							Read Full Article
 						</button>
 						{safeUrl(article.url) && (
@@ -403,7 +403,7 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 						)}
 					</div>
 
-					<div className="flex items-center gap-1 print:hidden">
+					<div className="flex items-center gap-1 print:hidden self-end sm:self-auto">
 						<Button
 							variant="ghost"
 							size="sm"
@@ -478,7 +478,7 @@ function ArticleDrawer({ article, onClose, onPreserve, onDelete, onUnpreserveAnd
 				].join(' ')}
 			>
 				{/* Drawer header */}
-				<div className="flex items-center justify-between px-7 py-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
+				<div className="flex items-center justify-between px-5 sm:px-7 py-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
 					<div>
 						<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-0.5">
 							Full Article
@@ -514,7 +514,7 @@ function ArticleDrawer({ article, onClose, onPreserve, onDelete, onUnpreserveAnd
 				</div>
 
 				{/* Drawer body */}
-				<div className="flex-1 overflow-y-auto px-7 py-7 space-y-7">
+				<div className="flex-1 overflow-y-auto px-5 sm:px-7 py-7 space-y-7">
 					{article && (
 						<>
 							{/* Title + source link */}
@@ -586,7 +586,7 @@ function ArticleDrawer({ article, onClose, onPreserve, onDelete, onUnpreserveAnd
 
 				{/* Drawer footer — preserve / delete actions */}
 				{article && (
-					<div className="shrink-0 px-7 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+					<div className="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
 						<Button
 							variant="ghost"
 							size="sm"

@@ -108,6 +108,7 @@ New briefings use the per-article card layout instead.
 - **Print Briefing** — `window.print()` with sidebar hidden via `print:hidden`
 - **Dark / light mode** — toggle in sidebar (defaults to light); Inter body + DM Serif Display for headings
 - **HIGH badge** — articles flagged `[HIGH]` by the AI get a red destructive badge
+- **Mobile responsive** — sidebar collapses off-screen on mobile; a hamburger button in the top bar slides it in as an overlay; selecting a date or article auto-closes it; drawer goes full-width on small screens; card action row and drawer footer stack/wrap to remain tappable
 
 ## Security
 
