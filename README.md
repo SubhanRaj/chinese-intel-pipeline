@@ -37,7 +37,7 @@ An automated intelligence extraction pipeline that scrapes seven Chinese provinc
                         └──────────────────────────────────────────────────┘
 ```
 
-\* Puppeteer is currently bypassed with mock articles while the Browser Rendering free-tier daily quota resets. See [Restoring live scraping](#restoring-live-scraping).
+\* Puppeteer and live browser scraping are active. The 2026-06-23 briefing contains seeded demo articles inserted while the Browser Rendering quota was temporarily exhausted; all subsequent runs use live data.
 
 **Cron schedule:** `30 1 * * *` UTC = **09:30 CST** — runs once per day after morning editions publish.
 
@@ -230,14 +230,6 @@ curl https://scraper-worker.shubhanraj2002.workers.dev
 cd scraper-worker && npm run dev
 curl "http://localhost:8787/__scheduled?cron=30+1+*+*+*"
 ```
-
-## Restoring live scraping
-
-The Puppeteer block in `scraper-worker/src/index.ts` is commented out while the Browser Rendering free-tier quota resets. To restore:
-
-1. Uncomment the `buildUrls` + `puppeteer.launch` block
-2. Remove the `scrapedArticles` mock array assignment
-3. Redeploy: `cd scraper-worker && npm run deploy`
 
 ## Production URLs
 

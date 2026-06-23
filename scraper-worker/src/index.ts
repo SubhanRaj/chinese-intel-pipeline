@@ -231,38 +231,22 @@ async function runPipeline(env: Env): Promise<string> {
 		return msg;
 	}
 
-	// TEMPORARILY BYPASSING PUPPETEER — Browser Rendering free tier 429 limit reached.
-	// To restore live scraping, uncomment the block below and remove the mock assignment.
-	//
-	// const urls = buildUrls(yyyy, mm, dd);
-	// const browser = await puppeteer.launch(env.BROWSER);
-	// const scrapedArticles: ScrapedArticle[] = [];
-	// for (const url of urls) {
-	//   const arts = await scrapeUrl(browser, url);
-	//   scrapedArticles.push(...arts);
-	// }
-	// await browser.close();
+	const urls = buildUrls(yyyy, mm, dd);
+	const browser = await puppeteer.launch(env.BROWSER);
+	const scrapedArticles: ScrapedArticle[] = [];
+	for (const url of urls) {
+		const arts = await scrapeUrl(browser, url);
+		scrapedArticles.push(...arts);
+	}
+	await browser.close();
 
-	const scrapedArticles: ScrapedArticle[] = [
-		{
-			title: '嫦娥六号探测器成功在月球背面软着陆',
-			full_text: '中国国家航天局宣布，嫦娥六号探测器成功在月球背面软着陆，这是人类历史上首次在月球背面进行采样返回任务。科学家表示，此次任务将帮助人类更好地了解月球的地质历史。',
-			url: 'https://example.com/mock/change6',
-		},
-		{
-			title: '第一季度国内生产总值同比增长5.3%',
-			full_text: '经济部门报告称，第一季度国内生产总值同比增长5.3%，超过市场预期。其中，高技术制造业和服务业增速较快，外贸出口也实现正增长。',
-			url: 'https://example.com/mock/gdp',
-		},
-		{
-			title: '全国人大常委会审议新能源法草案',
-			full_text: '全国人民代表大会常务委员会本周开始审议新能源法草案，该法案旨在规范可再生能源开发利用，加快实现碳达峰碳中和目标。',
-			url: 'https://example.com/mock/energy-law',
-		},
-	];
+	if (scrapedArticles.length === 0) {
+		const msg = `No articles scraped for ${trackingDate} — all sources may be unavailable.`;
+		console.warn(msg);
+		return msg;
+	}
 
-	console.log('[MOCK MODE] Using hardcoded articles — Puppeteer bypassed.');
-	console.log('Sending to Workers AI for analysis…');
+	console.log(`Scraped ${scrapedArticles.length} articles. Sending to Workers AI for analysis…`);
 
 	const aiArticles = await analyseWithWorkersAI(env.AI, scrapedArticles);
 
