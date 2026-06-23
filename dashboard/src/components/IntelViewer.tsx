@@ -18,6 +18,7 @@ import {
 	IconArticle,
 	IconLanguage,
 	IconLock,
+	IconMenu2,
 } from '@tabler/icons-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 		briefings.length > 0 ? briefings[0].id : null,
 	);
 	const [dark, setDark] = useState(false);
+	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [drawerArticle, setDrawerArticle] = useState<IntelArticle | null>(null);
 	const [, startTransition] = useTransition();
 
@@ -62,7 +64,20 @@ export default function IntelViewer({ briefings, articles }: Props) {
 
 	// ── Sidebar ───────────────────────────────────────────────────────────────
 	const sidebar = (
-		<aside className="w-80 shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 print:hidden">
+		<>
+			{/* Mobile backdrop */}
+			<div
+				onClick={() => setSidebarOpen(false)}
+				className={[
+					'fixed inset-0 z-20 bg-black/40 md:hidden transition-opacity duration-300',
+					sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+				].join(' ')}
+			/>
+
+			<aside className={[
+				'fixed md:relative inset-y-0 left-0 z-30 w-80 shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 print:hidden transition-transform duration-300 ease-in-out md:translate-x-0',
+				sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+			].join(' ')}>
 			<div className="px-6 py-5 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between">
 				<div>
 					<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-1">
@@ -73,13 +88,23 @@ export default function IntelViewer({ briefings, articles }: Props) {
 					</h1>
 					<p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Daily briefings · CST</p>
 				</div>
-				<button
-					onClick={() => setDark((d) => !d)}
-					className="mt-1 p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-					aria-label="Toggle colour mode"
-				>
-					{dark ? <IconSun size={18} /> : <IconMoon size={18} />}
-				</button>
+				<div className="flex items-center gap-1">
+					<button
+						onClick={() => setDark((d) => !d)}
+						className="mt-1 p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+						aria-label="Toggle colour mode"
+					>
+						{dark ? <IconSun size={18} /> : <IconMoon size={18} />}
+					</button>
+					{/* Close sidebar on mobile */}
+					<button
+						onClick={() => setSidebarOpen(false)}
+						className="mt-1 p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors md:hidden"
+						aria-label="Close sidebar"
+					>
+						<IconX size={18} />
+					</button>
+				</div>
 			</div>
 
 			<nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
@@ -93,7 +118,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 						{preservedArticles.map((a) => (
 							<button
 								key={a.id}
-								onClick={() => setDrawerArticle(a)}
+								onClick={() => { setDrawerArticle(a); setSidebarOpen(false); }}
 								className="w-full text-left rounded-lg px-3 py-2 mb-0.5 flex items-start gap-2.5 transition-all duration-100 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 group"
 							>
 								<IconBookmark size={13} className="shrink-0 mt-0.5 text-amber-500" />
@@ -129,7 +154,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 							return (
 								<button
 									key={b.id}
-									onClick={() => { setSelectedId(b.id); setDrawerArticle(null); }}
+									onClick={() => { setSelectedId(b.id); setDrawerArticle(null); setSidebarOpen(false); }}
 									className={[
 										'w-full text-left rounded-lg px-3 py-2.5 mb-0.5 flex items-center gap-3 transition-all duration-100',
 										isActive
@@ -155,6 +180,28 @@ export default function IntelViewer({ briefings, articles }: Props) {
 				</p>
 			</div>
 		</aside>
+		</>
+	);
+
+	// ── Mobile top bar ────────────────────────────────────────────────────────
+	const mobileTopBar = (
+		<div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0">
+			<button
+				onClick={() => setSidebarOpen(true)}
+				className="p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+				aria-label="Open sidebar"
+			>
+				<IconMenu2 size={20} />
+			</button>
+			<div className="flex-1 min-w-0">
+				<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 leading-none mb-0.5">
+					Intelligence Monitor
+				</p>
+				<p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+					Chinese Provincial Press
+				</p>
+			</div>
+		</div>
 	);
 
 	// ── Empty state ───────────────────────────────────────────────────────────
@@ -162,7 +209,9 @@ export default function IntelViewer({ briefings, articles }: Props) {
 		return (
 			<div className="flex h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
 				{sidebar}
-				<main className="flex-1 flex items-center justify-center">
+				<main className="flex-1 flex flex-col">
+					{mobileTopBar}
+					<div className="flex-1 flex items-center justify-center">
 					<div className="text-center max-w-sm px-6">
 						<div className="flex justify-center mb-6">
 							<IconNews size={56} className="text-slate-300 dark:text-slate-700" />
@@ -180,6 +229,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 							cron <span className="font-mono ml-1">30 1 * * *</span>
 						</div>
 					</div>
+					</div>
 				</main>
 			</div>
 		);
@@ -190,7 +240,9 @@ export default function IntelViewer({ briefings, articles }: Props) {
 		<div className="flex h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
 			{sidebar}
 
-			<main className="flex-1 overflow-y-auto print:overflow-visible print:h-auto">
+			<main className="flex-1 flex flex-col overflow-hidden md:overflow-y-auto print:overflow-visible print:h-auto">
+				{mobileTopBar}
+				<div className="flex-1 overflow-y-auto">
 				{selected === null ? (
 					<div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
 						<IconNews size={48} className="text-slate-300 dark:text-slate-700" />
@@ -249,6 +301,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 						)}
 					</div>
 				)}
+				</div>
 			</main>
 
 			{/* Slide-in article drawer */}
@@ -420,7 +473,7 @@ function ArticleDrawer({ article, onClose, onPreserve, onDelete, onUnpreserveAnd
 			{/* Panel */}
 			<div
 				className={[
-					'fixed top-0 right-0 z-50 h-full w-[48%] min-w-[440px] bg-white dark:bg-slate-900 shadow-2xl flex flex-col transition-transform duration-300 ease-in-out',
+					'fixed top-0 right-0 z-50 h-full w-full sm:w-[48%] sm:min-w-[440px] bg-white dark:bg-slate-900 shadow-2xl flex flex-col transition-transform duration-300 ease-in-out',
 					open ? 'translate-x-0' : 'translate-x-full',
 				].join(' ')}
 			>
