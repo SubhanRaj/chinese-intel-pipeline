@@ -1,0 +1,15 @@
+{
+	"name": "dashboard",
+	"compatibility_date": "2026-06-23",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"pages_build_output_dir": ".vercel/output/static",
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "intel_briefings_db",
+			"database_id": "d48e8453-eb7e-4c39-8c54-973433bb9d92"
+		}
+	]
+}
