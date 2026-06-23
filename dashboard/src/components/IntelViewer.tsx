@@ -95,7 +95,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 									'w-full text-left rounded-lg px-4 py-3 mb-1 flex items-center gap-3 transition-all duration-100',
 									isActive
 										? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
-										: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200',
+										: 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200',
 								].join(' ')}
 							>
 								<IconCalendar size={16} className="shrink-0 text-slate-400 dark:text-slate-500" />
@@ -120,7 +120,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 	// ── Empty state ───────────────────────────────────────────────────────────
 	if (briefings.length === 0) {
 		return (
-			<div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
+			<div className="flex h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
 				{sidebar}
 				<main className="flex-1 flex items-center justify-center">
 					<div className="text-center max-w-sm px-6">
@@ -147,7 +147,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 
 	// ── Main layout ───────────────────────────────────────────────────────────
 	return (
-		<div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
+		<div className="flex h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
 			{sidebar}
 
 			<main className="flex-1 overflow-y-auto print:overflow-visible print:h-auto">
@@ -253,8 +253,8 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 	const isHigh = article.summary?.includes('[HIGH]');
 
 	return (
-		<Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm pb-0">
-			<CardHeader className="pb-2">
+		<Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm py-0">
+			<CardHeader className="pt-5 pb-2">
 				<div className="flex items-start justify-between gap-3">
 					<CardTitle className="font-serif text-xl text-slate-900 dark:text-slate-100 leading-snug">
 						{article.title ?? 'Untitled Article'}
@@ -267,7 +267,7 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 				</div>
 			</CardHeader>
 
-			<CardContent className="pt-0 pb-4 space-y-4">
+			<CardContent className="pt-0 pb-4 space-y-3">
 				{/* AI summary */}
 				{article.summary && (
 					<p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed">
@@ -276,7 +276,7 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 				)}
 
 				{/* Action row */}
-				<div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+				<div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
 					<div className="flex items-center gap-4">
 						<button
 							onClick={() => onReadFull(article)}
@@ -456,7 +456,7 @@ function ArticleDrawer({ article, onClose }: DrawerProps) {
 											</div>
 										</div>
 									) : (
-										<div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-5 py-4">
+										<div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950 px-5 py-4">
 											<p className="text-sm text-slate-500 dark:text-slate-400">
 												Full English translation not available for this article.
 												Toggle to <strong>中文 Source</strong> to read the original.
