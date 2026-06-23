@@ -1,6 +1,6 @@
 # Chinese Intel Pipeline
 
-An automated intelligence extraction pipeline that scrapes seven Chinese provincial newspapers every morning, analyses the content with Claude, and serves a structured English briefing through a web dashboard.
+An automated intelligence extraction pipeline that scrapes seven Chinese provincial newspapers every morning, analyses the content with Cloudflare Workers AI, and serves a structured English briefing through a Next.js dashboard.
 
 ## Architecture
 
@@ -27,8 +27,9 @@ An automated intelligence extraction pipeline that scrapes seven Chinese provinc
                         │    Next.js 16 · Cloudflare Worker         │
                         │    (via @opennextjs/cloudflare)           │
                         │                                           │
-                        │  Server component → getCloudflareContext  │
+                        │  Server component → D1 query via Drizzle │
                         │  Client component → sidebar + markdown    │
+                        │  Dark / light mode toggle (Tabler Icons)  │
                         └───────────────────────────────────────────┘
 ```
 
@@ -45,6 +46,8 @@ The worker responds to two trigger types using the same shared `runPipeline()` f
 
 The pipeline is **idempotent** — re-triggering on the same CST date skips the scrape and returns `Already processed <date>, skipping.`
 
+> **Note:** Puppeteer is currently bypassed with a mock string while the Browser Rendering free-tier daily quota resets. To restore live scraping, uncomment the Puppeteer block in `scraper-worker/src/index.ts` and remove the `rawScrapedText` mock assignment.
+
 ## Sources scraped
 
 | Paper | Province | URL pattern |
@@ -57,11 +60,11 @@ The pipeline is **idempotent** — re-triggering on the same CST date skips the 
 | Nanfang Daily | Guangdong | `epaper.nfnews.com/…/YYYYMM/DD/…` |
 | Hainan Daily | Hainan | `news.hndaily.cn/h5/html5/YYYY-MM/DD/…` |
 
-Each source is scraped with a two-step Puppeteer pass: index page → article sub-pages (up to 25). Images, stylesheets, and fonts are aborted at the request interceptor to minimise execution time.
+Each source uses a two-step Puppeteer pass: index page → article sub-pages (up to 25). Images, stylesheets, and fonts are aborted at the request interceptor to minimise execution time.
 
 ## Intel categories
 
-Claude organises each briefing into eight sections:
+Workers AI organises each briefing into eight sections:
 
 1. Internal Political
 2. External Political / Foreign Affairs
@@ -74,6 +77,13 @@ Claude organises each briefing into eight sections:
 
 Each article includes: original Chinese title, English translation, page reference, and a geopolitical inference where relevant. High-significance items are flagged 🔴.
 
+## Dashboard features
+
+- **Dark / light mode** — toggle in the sidebar header (sun/moon icon), defaults to dark
+- **View Source 中文** — button in each briefing header reveals the raw scraped Chinese text; click again to return to the English analysis
+- **Sidebar date list** — all briefings ordered newest-first; active date highlighted
+- Icons throughout via [Tabler Icons](https://tabler.io/icons)
+
 ## Project layout
 
 ```
@@ -82,14 +92,16 @@ chinese-intel-pipeline/
 │   ├── src/
 │   │   ├── index.ts          # fetch + scheduled handlers → shared runPipeline()
 │   │   └── db/schema.ts      # Drizzle ORM schema
-│   └── wrangler.jsonc        # ENABLE_EMAIL="false" default var, cron trigger
+│   └── wrangler.jsonc        # AI binding, ENABLE_EMAIL var, cron trigger
 └── dashboard/
     ├── src/
     │   ├── app/
-    │   │   ├── page.tsx       # Server component — fetches briefings from D1
-    │   │   └── globals.css    # Tailwind v4 + typography plugin import
+    │   │   ├── layout.tsx     # Metadata, OG tags, favicon, dark class default
+    │   │   ├── page.tsx       # Server component — D1 query (force-dynamic)
+    │   │   └── globals.css    # Tailwind v4 + typography + dark variant
     │   ├── components/
-    │   │   └── IntelViewer.tsx  # Client component — sidebar + markdown viewer
+    │   │   ├── IntelViewer.tsx    # Client component — sidebar, dark mode, toggle
+    │   │   └── MarkdownRenderer.tsx  # Isolated react-markdown (dynamic, ssr:false)
     │   ├── db/schema.ts       # Drizzle ORM schema (identical to worker)
     │   └── env.d.ts           # Augments CloudflareEnv with DB: D1Database
     └── wrangler.jsonc         # Worker-mode deploy (main + assets)
@@ -146,7 +158,7 @@ npm run deploy
 ### Test the worker immediately
 
 ```bash
-# HTTP trigger — runs the full pipeline and streams logs in the response
+# HTTP trigger — runs the full pipeline, returns plain-text result
 curl https://scraper-worker.shubhanraj2002.workers.dev
 
 # Local dev (cron simulation)
@@ -165,10 +177,11 @@ curl "http://localhost:8787/__scheduled?cron=0+22+*+*+*"
 
 | Layer | Technology |
 |---|---|
-| Scraper runtime | Cloudflare Workers + `@cloudflare/puppeteer` |
-| AI analysis | Cloudflare Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (free tier) |
+| Scraper runtime | Cloudflare Workers + `@cloudflare/puppeteer` (Browser Rendering) |
+| AI analysis | Cloudflare Workers AI — `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (free tier) |
 | Database | Cloudflare D1 (SQLite) via Drizzle ORM |
 | Email (optional) | Resend API |
-| Dashboard | Next.js 16 (App Router) deployed as a Cloudflare Worker via `@opennextjs/cloudflare` |
-| Styling | Tailwind CSS v4 + `@tailwindcss/typography` |
-| Markdown render | `react-markdown` |
+| Dashboard | Next.js 16 App Router deployed as Cloudflare Worker via `@opennextjs/cloudflare` |
+| Styling | Tailwind CSS v4 + `@tailwindcss/typography` · dark/light mode via class strategy |
+| Icons | Tabler Icons (`@tabler/icons-react`) |
+| Markdown render | `react-markdown` (client-only, isolated via `next/dynamic`) |
