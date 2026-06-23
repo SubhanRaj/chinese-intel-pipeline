@@ -28,9 +28,5 @@
 		}
 	],
 	"upload_source_maps": true,
-	"vars": {
-		// Toggle email dispatch without touching secrets.
-		// Override at runtime: `wrangler secret put ENABLE_EMAIL` → "true"
-		"ENABLE_EMAIL": "false"
-	}
+	"vars": {}
 }

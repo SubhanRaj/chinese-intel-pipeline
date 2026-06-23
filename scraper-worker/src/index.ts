@@ -326,16 +326,72 @@ async function runPipeline(env: Env): Promise<string> {
 
 export default {
 	async fetch(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-		console.log('Manual HTTP trigger received. Starting pipeline…');
-		try {
-			const result = await runPipeline(env);
-			return new Response(result, { status: 200, headers: { 'Content-Type': 'text/plain' } });
-		} catch (err) {
-			console.error('Pipeline error:', err);
-			return new Response(`Scraper error: ${String(err)}`, {
-				status: 500,
-				headers: { 'Content-Type': 'text/plain' },
-			});
+		console.log('Manual Shadcn Light Mode Email Test Triggered.');
+
+		const db = drizzle(env.DB);
+		const recentArticles = await db.select().from(intelArticles).limit(10);
+
+		if (!recentArticles || recentArticles.length === 0) {
+			return new Response('No articles found in DB to send.', { status: 404 });
+		}
+
+		const today = new Date().toISOString().split('T')[0];
+
+		const htmlContent = `
+<div style="font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; max-width: 650px; margin: 0 auto; background-color: #f8fafc; padding: 24px; color: #0f172a;">
+
+  <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 16px; margin-bottom: 24px;">
+    <p style="color: #ef4444; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 8px 0;">
+      Intelligence Briefing
+    </p>
+    <h1 style="color: #0f172a; font-size: 36px; font-weight: 700; margin: 0; letter-spacing: -0.025em;">
+      ${today}
+    </h1>
+    <p style="color: #64748b; font-size: 14px; margin-top: 8px; margin-bottom: 0;">
+      Chinese Provincial Press Monitor &bull; ${recentArticles.length} Articles &bull; CST Morning Edition
+    </p>
+  </div>
+
+  ${recentArticles.map((a) => `
+    <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);">
+      <h2 style="color: #0f172a; font-size: 18px; font-weight: 600; margin: 0 0 12px 0; line-height: 1.4;">
+        ${a.title ?? '(no title)'}
+      </h2>
+      <p style="color: #475569; font-size: 15px; line-height: 1.6; margin: 0 0 20px 0;">
+        ${a.summary ?? ''}
+      </p>
+      <div style="border-top: 1px solid #f1f5f9; padding-top: 16px;">
+        <a href="${a.url ?? '#'}" target="_blank" style="color: #ef4444; font-size: 14px; font-weight: 500; text-decoration: none;">
+          View Source URL →
+        </a>
+      </div>
+    </div>
+  `).join('')}
+
+  <div style="margin-top: 32px; text-align: center; color: #94a3b8; font-size: 12px;">
+    <p>This is an automated intelligence brief generated via Cloudflare Workers AI.</p>
+  </div>
+</div>`;
+
+		const res = await fetch('https://api.resend.com/emails', {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${env.RESEND_API_KEY}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				from: env.RESEND_FROM_EMAIL,
+				to: [env.RESEND_TO_EMAIL],
+				subject: `Intel Briefing: ${today}`,
+				html: htmlContent,
+			}),
+		});
+
+		if (res.ok) {
+			return new Response('Light mode test email dispatched! Check your inbox.', { status: 200 });
+		} else {
+			const errorText = await res.text();
+			return new Response(`Resend API Error: ${errorText}`, { status: 500 });
 		}
 	},
 
