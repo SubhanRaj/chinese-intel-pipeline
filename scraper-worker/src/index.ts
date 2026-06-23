@@ -229,26 +229,17 @@ async function runPipeline(env: Env): Promise<string> {
 		return msg;
 	}
 
-	const urls = buildUrls(yyyy, mm, dd);
-	console.log(`Scraping ${urls.length} sources for ${trackingDate}…`);
+	// TEMPORARILY BYPASSING PUPPETEER — Browser Rendering free tier 429 limit reached.
+	// Restore the block below once the daily quota resets.
+	// const urls = buildUrls(yyyy, mm, dd);
+	// const browser = await puppeteer.launch(env.BROWSER);
+	// const scrapedParts: string[] = [];
+	// for (const url of urls) { ... }
+	// await browser.close();
+	// const rawScrapedText = scrapedParts.join('\n\n==========\n\n');
 
-	const browser = await puppeteer.launch(env.BROWSER);
-	const scrapedParts: string[] = [];
-
-	for (const url of urls) {
-		console.log(`Scraping: ${url}`);
-		try {
-			const text = await scrapeUrl(browser, url);
-			scrapedParts.push(text);
-		} catch (err) {
-			scrapedParts.push(`[FAILED ${url}]: ${String(err)}`);
-		}
-	}
-
-	await browser.close();
-
-	const rawScrapedText = scrapedParts.join('\n\n==========\n\n');
-	console.log(`Total scraped characters: ${rawScrapedText.length}`);
+	const rawScrapedText = "中国国家航天局宣布，嫦娥六号探测器成功在月球背面软着陆，这是人类历史上首次在月球背面进行采样返回任务。此外，经济部门报告称，第一季度国内生产总值同比增长5.3%。";
+	console.log('[MOCK MODE] Using hardcoded Chinese text — Puppeteer bypassed.');
 
 	console.log('Sending to Workers AI for analysis…');
 	const aiAnalysisMarkdown = await analyseWithWorkersAI(env.AI, rawScrapedText);

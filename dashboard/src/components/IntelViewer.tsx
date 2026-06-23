@@ -1,8 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import dynamic from 'next/dynamic';
 import type { IntelBriefing } from '@/db/schema';
+
+// MarkdownRenderer wraps react-markdown. Dynamic + ssr:false keeps react-markdown
+// out of the edge bundle entirely — it only loads in the browser after hydration.
+const MarkdownRenderer = dynamic(() => import('./MarkdownRenderer'), { ssr: false });
 
 interface Props {
 	briefings: IntelBriefing[];
@@ -159,7 +163,7 @@ export default function IntelViewer({ briefings }: Props) {
 									prose-blockquote:border-l-red-600 prose-blockquote:text-slate-400 prose-blockquote:bg-slate-900/50 prose-blockquote:py-1
 								"
 							>
-								<ReactMarkdown>{selected.aiAnalysisMarkdown}</ReactMarkdown>
+								<MarkdownRenderer content={selected.aiAnalysisMarkdown!} />
 							</div>
 						) : (
 							<div className="flex items-center gap-3 text-slate-500 text-sm border border-slate-800 rounded-lg px-5 py-4 bg-slate-900/40">
