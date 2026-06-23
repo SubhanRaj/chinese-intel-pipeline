@@ -22,7 +22,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { togglePreserve, deleteArticle } from '@/app/actions';
+import { togglePreserve, deleteArticle, unpreserveAndDelete } from '@/app/actions';
 import { safeUrl } from '@/lib/utils';
 import type { IntelBriefing, IntelArticle } from '@/db/schema';
 
@@ -252,7 +252,19 @@ export default function IntelViewer({ briefings, articles }: Props) {
 			</main>
 
 			{/* Slide-in article drawer */}
-			<ArticleDrawer article={drawerArticle} onClose={() => setDrawerArticle(null)} />
+			<ArticleDrawer
+				article={drawerArticle}
+				onClose={() => setDrawerArticle(null)}
+				onPreserve={(id, current) => startTransition(() => togglePreserve(id, current))}
+				onDelete={(id) => {
+					startTransition(() => deleteArticle(id));
+					setDrawerArticle(null);
+				}}
+				onUnpreserveAndDelete={(id) => {
+					startTransition(() => unpreserveAndDelete(id));
+					setDrawerArticle(null);
+				}}
+			/>
 		</div>
 	);
 }
@@ -382,9 +394,12 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 interface DrawerProps {
 	article: IntelArticle | null;
 	onClose: () => void;
+	onPreserve: (id: number, current: number) => void;
+	onDelete: (id: number) => void;
+	onUnpreserveAndDelete: (id: number) => void;
 }
 
-function ArticleDrawer({ article, onClose }: DrawerProps) {
+function ArticleDrawer({ article, onClose, onPreserve, onDelete, onUnpreserveAndDelete }: DrawerProps) {
 	const [showChinese, setShowChinese] = useState(false);
 	const open = article !== null;
 
@@ -515,6 +530,52 @@ function ArticleDrawer({ article, onClose }: DrawerProps) {
 						</>
 					)}
 				</div>
+
+				{/* Drawer footer — preserve / delete actions */}
+				{article && (
+					<div className="shrink-0 px-7 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={() => onPreserve(article.id, article.isPreserved ?? 0)}
+							className={[
+								'gap-2 text-sm',
+								article.isPreserved
+									? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
+									: 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400',
+							].join(' ')}
+						>
+							{article.isPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
+							{article.isPreserved ? 'Preserved — click to unpreserve' : 'Preserve'}
+						</Button>
+
+						<div className="flex items-center gap-2">
+							{article.isPreserved ? (
+								/* Preserved: offer a single combined "remove lock + delete" action */
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={() => onUnpreserveAndDelete(article.id)}
+									className="gap-2 text-sm text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+									title="Remove preservation and permanently delete"
+								>
+									<IconTrash size={15} />
+									Unpreserve &amp; Delete
+								</Button>
+							) : (
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={() => onDelete(article.id)}
+									className="gap-2 text-sm text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+								>
+									<IconTrash size={15} />
+									Delete
+								</Button>
+							)}
+						</div>
+					</div>
+				)}
 			</div>
 		</>
 	);

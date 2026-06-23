@@ -24,6 +24,18 @@ export async function togglePreserve(id: number, current: number) {
 	revalidatePath('/');
 }
 
+/** Removes the preservation lock and immediately deletes the article in one operation. */
+export async function unpreserveAndDelete(id: number) {
+	if (!validId(id)) return;
+
+	const { env } = await getCloudflareContext({ async: true });
+	const db = drizzle(env.DB);
+	// Clear the lock first so the delete is not blocked by any future guard
+	await db.update(intelArticles).set({ isPreserved: 0 }).where(eq(intelArticles.id, id));
+	await db.delete(intelArticles).where(eq(intelArticles.id, id));
+	revalidatePath('/');
+}
+
 export async function deleteArticle(id: number) {
 	if (!validId(id)) return;
 
