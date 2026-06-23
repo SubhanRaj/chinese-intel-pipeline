@@ -162,17 +162,26 @@ async function analyseWithWorkersAI(ai: any, articles: ScrapedArticle[]): Promis
 		throw new Error(`Unexpected Workers AI response shape: ${JSON.stringify(response)}`);
 	}
 
-	// Strip markdown code fences if the model wraps its output
-	const raw = response.response.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+	// Extract all [...] JSON arrays from the response and try each from last to first.
+	// The model sometimes echoes the input array before its output, so we prefer the last match.
+	const allMatches = [...response.response.matchAll(/\[[\s\S]*?\]/g)];
+	// Also try a greedy match for the largest array span
+	const greedyMatch = response.response.match(/\[[\s\S]*\]/);
+	const candidates = greedyMatch ? [greedyMatch[0], ...allMatches.map(m => m[0])] : allMatches.map(m => m[0]);
 
-	try {
-		const parsed = JSON.parse(raw);
-		if (Array.isArray(parsed)) return parsed as AiArticle[];
-		throw new Error('AI response was not a JSON array');
-	} catch {
-		// Fallback: wrap the whole response as a single summary article
-		return [{ title: 'AI Analysis', summary: response.response.slice(0, 1000), url: '' }];
+	for (const candidate of candidates) {
+		try {
+			const parsed = JSON.parse(candidate);
+			if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].title) {
+				console.log('[AI PARSED]', parsed.length, 'articles, first title:', parsed[0].title);
+				return parsed as AiArticle[];
+			}
+		} catch { /* try next */ }
 	}
+
+	// Hard fallback: one article per scraped item with raw title, no summary
+	console.log('[AI FALLBACK] Could not parse JSON array from response');
+	return articles.map((a) => ({ title: a.title, summary: 'Analysis unavailable.', url: a.url }));
 }
 
 // ---------- email ----------
