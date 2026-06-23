@@ -1,5 +1,4 @@
 import puppeteer from '@cloudflare/puppeteer';
-import Anthropic from '@anthropic-ai/sdk';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
 import { intelBriefings } from './db/schema';
@@ -7,7 +6,8 @@ import { intelBriefings } from './db/schema';
 export interface Env {
 	DB: D1Database;
 	BROWSER: Fetcher;
-	ANTHROPIC_API_KEY: string;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	AI: any;
 	// Email — set ENABLE_EMAIL="true" as a Worker secret to activate dispatch.
 	// Default is "false" (set in wrangler.jsonc vars) so no Resend keys are required.
 	ENABLE_EMAIL: string;
@@ -144,7 +144,7 @@ async function scrapeUrl(browser: Browser, startUrl: string): Promise<string> {
 
 // ---------- AI analysis ----------
 
-const ANALYSIS_PROMPT = `You are an expert analyst of Chinese provincial print media.
+const SYSTEM_PROMPT = `You are an expert analyst of Chinese provincial print media.
 You have been given raw text scraped from today's editions of multiple Chinese provincial newspapers.
 Your task is to produce a structured intelligence briefing in English Markdown.
 
@@ -165,25 +165,19 @@ Organise findings into these categories. For each article mention: page referenc
 - Use bullet points for each article.
 - Flag items of high geopolitical significance with 🔴.
 - At the top, add a one-paragraph **Executive Summary**.
-- At the bottom, add a **Source Notes** section listing which newspaper URLs were scraped.
+- At the bottom, add a **Source Notes** section listing which newspaper URLs were scraped.`;
 
-Raw scraped text follows:`;
-
-async function analyseWithClaude(apiKey: string, rawText: string): Promise<string> {
-	const client = new Anthropic({ apiKey });
-	const message = await client.messages.create({
-		model: 'claude-3-5-sonnet-latest',
-		max_tokens: 8192,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function analyseWithWorkersAI(ai: any, rawText: string): Promise<string> {
+	const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
 		messages: [
-			{
-				role: 'user',
-				content: `${ANALYSIS_PROMPT}\n\n${rawText.slice(0, 180_000)}`, // stay within context
-			},
+			{ role: 'system', content: SYSTEM_PROMPT },
+			{ role: 'user', content: `Raw scraped text follows:\n\n${rawText.slice(0, 100_000)}` },
 		],
 	});
-	const block = message.content[0];
-	if (block.type !== 'text') throw new Error('Unexpected Anthropic response type');
-	return block.text;
+	// Workers AI returns { response: string } for chat models
+	if (response && typeof response.response === 'string') return response.response;
+	throw new Error(`Unexpected Workers AI response shape: ${JSON.stringify(response)}`);
 }
 
 // ---------- email ----------
@@ -256,8 +250,8 @@ async function runPipeline(env: Env): Promise<string> {
 	const rawScrapedText = scrapedParts.join('\n\n==========\n\n');
 	console.log(`Total scraped characters: ${rawScrapedText.length}`);
 
-	console.log('Sending to Claude for analysis…');
-	const aiAnalysisMarkdown = await analyseWithClaude(env.ANTHROPIC_API_KEY, rawScrapedText);
+	console.log('Sending to Workers AI for analysis…');
+	const aiAnalysisMarkdown = await analyseWithWorkersAI(env.AI, rawScrapedText);
 
 	// Upsert into D1
 	await db

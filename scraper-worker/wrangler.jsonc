@@ -17,6 +17,9 @@
 	"browser": {
 		"binding": "BROWSER"
 	},
+	"ai": {
+		"binding": "AI"
+	},
 	"d1_databases": [
 		{
 			"binding": "DB",
