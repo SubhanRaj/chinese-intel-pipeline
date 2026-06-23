@@ -65,7 +65,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 					<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-1">
 						Intelligence Monitor
 					</p>
-					<h1 className="font-serif text-lg font-semibold text-slate-900 dark:text-slate-100 leading-snug">
+					<h1 className="text-base font-semibold text-slate-900 dark:text-slate-100 leading-snug tracking-tight">
 						Chinese Provincial Press
 					</h1>
 					<p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Daily briefings · CST</p>
@@ -127,7 +127,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 						<div className="flex justify-center mb-6">
 							<IconNews size={56} className="text-slate-300 dark:text-slate-700" />
 						</div>
-						<h2 className="font-serif text-xl font-semibold text-slate-700 dark:text-slate-200 mb-2">
+						<h2 className="text-xl font-semibold text-slate-700 dark:text-slate-200 mb-2">
 							No intelligence briefings yet.
 						</h2>
 						<p className="text-sm text-slate-500 leading-relaxed">
@@ -164,7 +164,7 @@ export default function IntelViewer({ briefings, articles }: Props) {
 							<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-2">
 								Intelligence Briefing
 							</p>
-							<h2 className="font-serif text-5xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+							<h2 className="font-serif text-5xl text-slate-900 dark:text-slate-100 tracking-tight">
 								{selected.trackingDate}
 							</h2>
 							<div className="flex items-center justify-between mt-4 flex-wrap gap-3">
@@ -253,10 +253,10 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 	const isHigh = article.summary?.includes('[HIGH]');
 
 	return (
-		<Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
+		<Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm pb-0">
 			<CardHeader className="pb-2">
 				<div className="flex items-start justify-between gap-3">
-					<CardTitle className="font-serif text-lg font-semibold text-slate-900 dark:text-slate-100 leading-snug">
+					<CardTitle className="font-serif text-xl text-slate-900 dark:text-slate-100 leading-snug">
 						{article.title ?? 'Untitled Article'}
 					</CardTitle>
 					{isHigh && (
@@ -270,7 +270,7 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 			<CardContent className="pt-0 pb-4 space-y-4">
 				{/* AI summary */}
 				{article.summary && (
-					<p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+					<p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed">
 						{article.summary.replace(/\[HIGH\]/g, '').trim()}
 					</p>
 				)}
@@ -404,7 +404,7 @@ function ArticleDrawer({ article, onClose }: DrawerProps) {
 						<>
 							{/* Title + source link */}
 							<div className="space-y-2">
-								<h2 className="font-serif text-2xl font-bold text-slate-900 dark:text-slate-100 leading-snug">
+								<h2 className="font-serif text-2xl text-slate-900 dark:text-slate-100 leading-snug">
 									{article.title}
 								</h2>
 								{article.url && (

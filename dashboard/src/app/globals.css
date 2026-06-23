@@ -131,9 +131,11 @@
 	}
 }
 
-/* Playfair Display serif for editorial headings */
+/* Font registrations */
 @theme inline {
-  --font-serif: var(--font-playfair);
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-dm-serif);
+  --font-mono: var(--font-geist-mono);
 }
 
 /* Improved light-mode contrast overrides */
