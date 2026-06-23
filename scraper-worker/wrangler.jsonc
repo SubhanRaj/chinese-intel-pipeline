@@ -24,5 +24,10 @@
 			"database_id": "d48e8453-eb7e-4c39-8c54-973433bb9d92"
 		}
 	],
-	"upload_source_maps": true
+	"upload_source_maps": true,
+	"vars": {
+		// Toggle email dispatch without touching secrets.
+		// Override at runtime: `wrangler secret put ENABLE_EMAIL` → "true"
+		"ENABLE_EMAIL": "false"
+	}
 }

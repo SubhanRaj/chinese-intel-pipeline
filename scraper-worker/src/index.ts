@@ -8,6 +8,9 @@ export interface Env {
 	DB: D1Database;
 	BROWSER: Fetcher;
 	ANTHROPIC_API_KEY: string;
+	// Email — set ENABLE_EMAIL="true" as a Worker secret to activate dispatch.
+	// Default is "false" (set in wrangler.jsonc vars) so no Resend keys are required.
+	ENABLE_EMAIL: string;
 	RESEND_API_KEY: string;
 	RESEND_TO_EMAIL: string;
 	RESEND_FROM_EMAIL: string;
@@ -265,25 +268,30 @@ export default {
 				set: { rawScrapedText, aiAnalysisMarkdown, emailStatus: 0 },
 			});
 
-		console.log('Saved to D1. Sending email…');
+		console.log('Saved to D1.');
 
-		try {
-			await sendEmail(
-				env.RESEND_API_KEY,
-				env.RESEND_FROM_EMAIL,
-				env.RESEND_TO_EMAIL,
-				trackingDate,
-				aiAnalysisMarkdown,
-			);
+		if (env.ENABLE_EMAIL === 'true') {
+			console.log('Email dispatch enabled — sending via Resend…');
+			try {
+				await sendEmail(
+					env.RESEND_API_KEY,
+					env.RESEND_FROM_EMAIL,
+					env.RESEND_TO_EMAIL,
+					trackingDate,
+					aiAnalysisMarkdown,
+				);
 
-			await db
-				.update(intelBriefings)
-				.set({ emailStatus: 1 })
-				.where(eq(intelBriefings.trackingDate, trackingDate));
+				await db
+					.update(intelBriefings)
+					.set({ emailStatus: 1 })
+					.where(eq(intelBriefings.trackingDate, trackingDate));
 
-			console.log('Email sent successfully.');
-		} catch (err) {
-			console.error('Email send failed (briefing saved):', err);
+				console.log('Email sent successfully.');
+			} catch (err) {
+				console.error('Email send failed (briefing saved):', err);
+			}
+		} else {
+			console.log('Email dispatch is currently disabled via ENABLE_EMAIL flag.');
 		}
 	},
 };
