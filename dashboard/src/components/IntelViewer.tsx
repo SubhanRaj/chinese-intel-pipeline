@@ -308,7 +308,10 @@ export default function IntelViewer({ briefings, articles }: Props) {
 			<ArticleDrawer
 				article={drawerArticle}
 				onClose={() => setDrawerArticle(null)}
-				onPreserve={(id, current) => startTransition(() => togglePreserve(id, current))}
+				onPreserve={(id, current) => {
+					startTransition(() => togglePreserve(id, current));
+					setDrawerArticle((prev) => prev ? { ...prev, isPreserved: current ? 0 : 1 } : null);
+				}}
 				onDelete={(id) => {
 					startTransition(() => deleteArticle(id));
 					setDrawerArticle(null);
