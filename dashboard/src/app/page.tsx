@@ -1,7 +1,7 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { drizzle } from 'drizzle-orm/d1';
 import { desc } from 'drizzle-orm';
-import { intelBriefings } from '@/db/schema';
+import { intelBriefings, intelArticles } from '@/db/schema';
 import IntelViewer from '@/components/IntelViewer';
 
 export const dynamic = 'force-dynamic';
@@ -10,10 +10,10 @@ export default async function Home() {
 	const { env } = await getCloudflareContext({ async: true });
 	const db = drizzle(env.DB);
 
-	const briefings = await db
-		.select()
-		.from(intelBriefings)
-		.orderBy(desc(intelBriefings.trackingDate));
+	const [briefings, articles] = await Promise.all([
+		db.select().from(intelBriefings).orderBy(desc(intelBriefings.trackingDate)),
+		db.select().from(intelArticles).orderBy(desc(intelArticles.createdAt)),
+	]);
 
-	return <IntelViewer briefings={briefings} />;
+	return <IntelViewer briefings={briefings} articles={articles} />;
 }

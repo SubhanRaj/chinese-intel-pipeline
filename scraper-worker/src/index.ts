@@ -1,7 +1,7 @@
 import puppeteer from '@cloudflare/puppeteer';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq } from 'drizzle-orm';
-import { intelBriefings } from './db/schema';
+import { eq, sql as drizzleSql } from 'drizzle-orm';
+import { intelBriefings, intelArticles } from './db/schema';
 
 export interface Env {
 	DB: D1Database;
@@ -30,26 +30,12 @@ function getCSTDateParts(): { yyyy: string; mm: string; dd: string } {
 function buildUrls(yyyy: string, mm: string, dd: string): string[] {
 	const yyyymmdd = `${yyyy}${mm}${dd}`;
 	return [
-		// Yunnan Daily — pattern: /html/YYYY/MMDD/YYYYMMDD_001/YYYYMMDD_001_<id>.html
-		// We land on the index page and discover article links from there
 		`https://yndaily.yunnan.cn/html/${yyyy}/${mm}${dd}/${yyyymmdd}_001/${yyyymmdd}_001_6618.html#0`,
-
-		// Sichuan Daily
 		`https://4g.scdaily.cn/wap/scrb/${yyyymmdd}/index.html`,
-
-		// Guangxi Daily (static URL — date is selected server-side)
 		`https://ssw.gxrb.com.cn/json/interface/epaper/api.php?#p=001`,
-
-		// Hunan Daily (static URL — SPA loads today's edition)
 		`https://h5cgi.voc.com.cn/hnrbdzb/#/`,
-
-		// Fujian Daily
 		`https://fjrb.fjdaily.com/pad/col/${yyyy}${mm}/${dd}/node_01.html`,
-
-		// Nanfang Daily
 		`https://epaper.nfnews.com/m/ipaper/nfrb/html/${yyyy}${mm}/${dd}/node_A05.html#/`,
-
-		// Hainan Daily
 		`https://news.hndaily.cn/h5/html5/${yyyy}-${mm}/${dd}/node_58471.htm`,
 	];
 }
@@ -58,26 +44,27 @@ function buildUrls(yyyy: string, mm: string, dd: string): string[] {
 
 type Browser = Awaited<ReturnType<typeof puppeteer.launch>>;
 
-async function scrapeUrl(browser: Browser, startUrl: string): Promise<string> {
+interface ScrapedArticle {
+	title: string;
+	full_text: string;
+	url: string;
+}
+
+async function scrapeUrl(browser: Browser, startUrl: string): Promise<ScrapedArticle[]> {
 	const page = await browser.newPage();
 
-	// Block images, stylesheets, and fonts to speed up scraping
 	await page.setRequestInterception(true);
 	page.on('request', (req) => {
 		const type = req.resourceType();
-		if (type === 'image' || type === 'stylesheet' || type === 'font') {
-			req.abort();
-		} else {
-			req.continue();
-		}
+		if (type === 'image' || type === 'stylesheet' || type === 'font') req.abort();
+		else req.continue();
 	});
 
-	const chunks: string[] = [];
+	const articles: ScrapedArticle[] = [];
 
 	try {
 		await page.goto(startUrl, { waitUntil: 'networkidle2', timeout: 30_000 });
 
-		// Step 1 — collect sub-page / article links on the index page
 		const subLinks = await page.evaluate((base: string) => {
 			const anchors = Array.from(document.querySelectorAll('a[href]')) as HTMLAnchorElement[];
 			const seen = new Set<string>();
@@ -85,99 +72,107 @@ async function scrapeUrl(browser: Browser, startUrl: string): Promise<string> {
 			for (const a of anchors) {
 				const href = a.href;
 				if (!href || href === base || href.startsWith('javascript') || href.startsWith('#')) continue;
-				// Only follow same-origin links that look like article/node pages
 				try {
 					const url = new URL(href);
 					const baseUrl = new URL(base);
 					if (url.hostname !== baseUrl.hostname) continue;
 					if (seen.has(href)) continue;
-					// Heuristic: links with "node", "article", "content", page numbers, or .html
-					if (
-						/node|article|content|page|\d{4,}|\.html|\.htm/.test(url.pathname + url.hash)
-					) {
+					if (/node|article|content|page|\d{4,}|\.html|\.htm/.test(url.pathname + url.hash)) {
 						seen.add(href);
 						links.push(href);
 					}
-				} catch {
-					// ignore malformed
-				}
+				} catch { /* ignore malformed */ }
 			}
-			return links.slice(0, 25); // cap at 25 sub-pages per source
+			return links.slice(0, 25);
 		}, startUrl);
 
-		// Step 2 — scrape the index page itself first
+		// Index page as an article
 		const indexText = await page.evaluate(() => document.body.innerText);
-		if (indexText.trim()) chunks.push(`[INDEX] ${startUrl}\n${indexText.trim()}`);
+		const indexTitle = await page.evaluate(() => document.title);
+		if (indexText.trim()) {
+			articles.push({ title: indexTitle || startUrl, full_text: indexText.trim(), url: startUrl });
+		}
 
-		// Step 3 — scrape each sub-page
+		// Sub-pages as individual articles
 		for (const link of subLinks) {
 			const subPage = await browser.newPage();
 			await subPage.setRequestInterception(true);
 			subPage.on('request', (req) => {
 				const type = req.resourceType();
-				if (type === 'image' || type === 'stylesheet' || type === 'font') {
-					req.abort();
-				} else {
-					req.continue();
-				}
+				if (type === 'image' || type === 'stylesheet' || type === 'font') req.abort();
+				else req.continue();
 			});
 			try {
 				await subPage.goto(link, { waitUntil: 'networkidle2', timeout: 20_000 });
 				const text = await subPage.evaluate(() => document.body.innerText);
+				const title = await subPage.evaluate(() => document.title);
 				if (text.trim().length > 100) {
-					chunks.push(`[PAGE] ${link}\n${text.trim()}`);
+					articles.push({ title: title || link, full_text: text.trim(), url: link });
 				}
-			} catch {
-				// non-fatal — skip this sub-page
-			} finally {
+			} catch { /* non-fatal */ } finally {
 				await subPage.close();
 			}
 		}
 	} catch (err) {
-		chunks.push(`[ERROR scraping ${startUrl}]: ${String(err)}`);
+		console.error(`[ERROR scraping ${startUrl}]:`, err);
 	} finally {
 		await page.close();
 	}
 
-	return chunks.join('\n\n---\n\n');
+	return articles;
 }
 
 // ---------- AI analysis ----------
 
-const SYSTEM_PROMPT = `You are an expert analyst of Chinese provincial print media.
-You have been given raw text scraped from today's editions of multiple Chinese provincial newspapers.
-Your task is to produce a structured intelligence briefing in English Markdown.
+const SYSTEM_PROMPT = `You are an intelligence analyst processing Chinese provincial newspaper articles.
+You will receive a JSON array of article objects, each with "title" (Chinese), "full_text" (Chinese), and "url".
 
-Organise findings into these categories. For each article mention: page reference (if visible), original Chinese title, English translation, and a brief geopolitical inference where relevant.
+Return ONLY a valid JSON array — no markdown, no code fences, no explanation. Each element must have:
+- "title": English translation of the original Chinese title (concise, accurate)
+- "summary": 2–3 sentence geopolitical analysis in English (flag high-significance items with [HIGH])
+- "url": copy the original URL unchanged
 
-## Categories
-1. Internal Political
-2. External Political / Foreign Affairs
-3. National Leader Movements (Politburo Standing Committee members)
-4. Provincial Leader Movements
-5. Economic / Commercial
-6. Science & Technology
-7. Social / Culture / Society
-8. Common Syndicated News (Xinhua wire stories repeated across papers — list once)
+Your output must be parseable by JSON.parse() with no preprocessing.`;
 
-## Format rules
-- Use ### for each category heading.
-- Use bullet points for each article.
-- Flag items of high geopolitical significance with 🔴.
-- At the top, add a one-paragraph **Executive Summary**.
-- At the bottom, add a **Source Notes** section listing which newspaper URLs were scraped.`;
+interface AiArticle {
+	title: string;
+	summary: string;
+	url: string;
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function analyseWithWorkersAI(ai: any, rawText: string): Promise<string> {
+async function analyseWithWorkersAI(ai: any, articles: ScrapedArticle[]): Promise<AiArticle[]> {
 	const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
 		messages: [
 			{ role: 'system', content: SYSTEM_PROMPT },
-			{ role: 'user', content: `Raw scraped text follows:\n\n${rawText.slice(0, 100_000)}` },
+			{
+				role: 'user',
+				content: JSON.stringify(
+					articles.map((a) => ({
+						title: a.title,
+						full_text: a.full_text.slice(0, 2_000), // cap per-article to stay within context
+						url: a.url,
+					})),
+				).slice(0, 100_000),
+			},
 		],
 	});
-	// Workers AI returns { response: string } for chat models
-	if (response && typeof response.response === 'string') return response.response;
-	throw new Error(`Unexpected Workers AI response shape: ${JSON.stringify(response)}`);
+
+	if (!response || typeof response.response !== 'string') {
+		throw new Error(`Unexpected Workers AI response shape: ${JSON.stringify(response)}`);
+	}
+
+	// Strip markdown code fences if the model wraps its output
+	const raw = response.response.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+
+	try {
+		const parsed = JSON.parse(raw);
+		if (Array.isArray(parsed)) return parsed as AiArticle[];
+		throw new Error('AI response was not a JSON array');
+	} catch {
+		// Fallback: wrap the whole response as a single summary article
+		return [{ title: 'AI Analysis', summary: response.response.slice(0, 1000), url: '' }];
+	}
 }
 
 // ---------- email ----------
@@ -187,26 +182,22 @@ async function sendEmail(
 	from: string,
 	to: string,
 	date: string,
-	markdown: string,
+	articles: AiArticle[],
 ): Promise<void> {
-	const htmlBody = `<pre style="font-family:monospace;white-space:pre-wrap">${markdown.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
+	const body = articles
+		.map((a) => `<h3>${a.title}</h3><p>${a.summary}</p><a href="${a.url}">${a.url}</a>`)
+		.join('<hr/>');
 	const res = await fetch('https://api.resend.com/emails', {
 		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${resendApiKey}`,
-			'Content-Type': 'application/json',
-		},
+		headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			from,
 			to: [to],
 			subject: `China Intel Briefing — ${date}`,
-			html: htmlBody,
+			html: `<html><body>${body}</body></html>`,
 		}),
 	});
-	if (!res.ok) {
-		const body = await res.text();
-		throw new Error(`Resend error ${res.status}: ${body}`);
-	}
+	if (!res.ok) throw new Error(`Resend error ${res.status}: ${await res.text()}`);
 }
 
 // ---------- shared pipeline ----------
@@ -216,7 +207,7 @@ async function runPipeline(env: Env): Promise<string> {
 	const trackingDate = `${yyyy}-${mm}-${dd}`;
 	const db = drizzle(env.DB);
 
-	// Idempotency check — skip if we already ran today
+	// Idempotency check
 	const existing = await db
 		.select()
 		.from(intelBriefings)
@@ -230,30 +221,75 @@ async function runPipeline(env: Env): Promise<string> {
 	}
 
 	// TEMPORARILY BYPASSING PUPPETEER — Browser Rendering free tier 429 limit reached.
-	// Restore the block below once the daily quota resets.
+	// To restore live scraping, uncomment the block below and remove the mock assignment.
+	//
 	// const urls = buildUrls(yyyy, mm, dd);
 	// const browser = await puppeteer.launch(env.BROWSER);
-	// const scrapedParts: string[] = [];
-	// for (const url of urls) { ... }
+	// const scrapedArticles: ScrapedArticle[] = [];
+	// for (const url of urls) {
+	//   const arts = await scrapeUrl(browser, url);
+	//   scrapedArticles.push(...arts);
+	// }
 	// await browser.close();
-	// const rawScrapedText = scrapedParts.join('\n\n==========\n\n');
 
-	const rawScrapedText = "中国国家航天局宣布，嫦娥六号探测器成功在月球背面软着陆，这是人类历史上首次在月球背面进行采样返回任务。此外，经济部门报告称，第一季度国内生产总值同比增长5.3%。";
-	console.log('[MOCK MODE] Using hardcoded Chinese text — Puppeteer bypassed.');
+	const scrapedArticles: ScrapedArticle[] = [
+		{
+			title: '嫦娥六号探测器成功在月球背面软着陆',
+			full_text: '中国国家航天局宣布，嫦娥六号探测器成功在月球背面软着陆，这是人类历史上首次在月球背面进行采样返回任务。科学家表示，此次任务将帮助人类更好地了解月球的地质历史。',
+			url: 'https://example.com/mock/change6',
+		},
+		{
+			title: '第一季度国内生产总值同比增长5.3%',
+			full_text: '经济部门报告称，第一季度国内生产总值同比增长5.3%，超过市场预期。其中，高技术制造业和服务业增速较快，外贸出口也实现正增长。',
+			url: 'https://example.com/mock/gdp',
+		},
+		{
+			title: '全国人大常委会审议新能源法草案',
+			full_text: '全国人民代表大会常务委员会本周开始审议新能源法草案，该法案旨在规范可再生能源开发利用，加快实现碳达峰碳中和目标。',
+			url: 'https://example.com/mock/energy-law',
+		},
+	];
 
+	console.log('[MOCK MODE] Using hardcoded articles — Puppeteer bypassed.');
 	console.log('Sending to Workers AI for analysis…');
-	const aiAnalysisMarkdown = await analyseWithWorkersAI(env.AI, rawScrapedText);
 
-	// Upsert into D1
+	const aiArticles = await analyseWithWorkersAI(env.AI, scrapedArticles);
+
+	// Build a combined raw text for the briefing record
+	const rawScrapedText = scrapedArticles
+		.map((a) => `[${a.url}]\n${a.title}\n${a.full_text}`)
+		.join('\n\n---\n\n');
+
+	// Upsert the daily briefing parent record
+	// aiAnalysisMarkdown stores "done" sentinel so idempotency check fires on re-run
 	await db
 		.insert(intelBriefings)
-		.values({ trackingDate, rawScrapedText, aiAnalysisMarkdown, emailStatus: 0 })
+		.values({ trackingDate, rawScrapedText, aiAnalysisMarkdown: 'articles', emailStatus: 0 })
 		.onConflictDoUpdate({
 			target: intelBriefings.trackingDate,
-			set: { rawScrapedText, aiAnalysisMarkdown, emailStatus: 0 },
+			set: { rawScrapedText, aiAnalysisMarkdown: 'articles', emailStatus: 0 },
 		});
 
-	console.log('Saved to D1.');
+	// Insert individual articles
+	for (let i = 0; i < aiArticles.length; i++) {
+		const ai = aiArticles[i];
+		const scraped = scrapedArticles[i];
+		await db.insert(intelArticles).values({
+			trackingDate,
+			title: ai.title ?? scraped?.title,
+			summary: ai.summary,
+			fullText: scraped?.full_text,
+			url: ai.url || scraped?.url,
+			isPreserved: 0,
+		});
+	}
+
+	console.log(`Saved ${aiArticles.length} articles to D1.`);
+
+	// 30-day cleanup of unpreserved articles
+	await env.DB.prepare(
+		`DELETE FROM intel_articles WHERE created_at <= datetime('now', '-30 days') AND is_preserved = 0`,
+	).run();
 
 	if (env.ENABLE_EMAIL === 'true') {
 		console.log('Email dispatch enabled — sending via Resend…');
@@ -263,41 +299,42 @@ async function runPipeline(env: Env): Promise<string> {
 				env.RESEND_FROM_EMAIL,
 				env.RESEND_TO_EMAIL,
 				trackingDate,
-				aiAnalysisMarkdown,
+				aiArticles,
 			);
-
 			await db
 				.update(intelBriefings)
 				.set({ emailStatus: 1 })
 				.where(eq(intelBriefings.trackingDate, trackingDate));
-
 			console.log('Email sent successfully.');
 		} catch (err) {
 			console.error('Email send failed (briefing saved):', err);
 		}
 	} else {
-		console.log('Email dispatch is currently disabled via ENABLE_EMAIL flag.');
+		console.log('Email dispatch disabled via ENABLE_EMAIL flag.');
 	}
 
-	return `Scraper pipeline completed for ${trackingDate}.`;
+	return `Pipeline completed for ${trackingDate} — ${aiArticles.length} articles.`;
 }
 
 // ---------- handlers ----------
 
 export default {
 	async fetch(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-		console.log('Manual HTTP trigger received. Starting scraper execution…');
+		console.log('Manual HTTP trigger received. Starting pipeline…');
 		try {
 			const result = await runPipeline(env);
 			return new Response(result, { status: 200, headers: { 'Content-Type': 'text/plain' } });
 		} catch (err) {
 			console.error('Pipeline error:', err);
-			return new Response(`Scraper error: ${String(err)}`, { status: 500, headers: { 'Content-Type': 'text/plain' } });
+			return new Response(`Scraper error: ${String(err)}`, {
+				status: 500,
+				headers: { 'Content-Type': 'text/plain' },
+			});
 		}
 	},
 
 	async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
-		console.log('Automated cron trigger fired. Starting scraper execution…');
+		console.log('Cron trigger fired. Starting pipeline…');
 		await runPipeline(env);
 	},
 };
