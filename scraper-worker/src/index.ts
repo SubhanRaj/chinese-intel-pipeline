@@ -130,6 +130,7 @@ You will receive a JSON array of article objects, each with "title" (Chinese), "
 Return ONLY a valid JSON array — no markdown, no code fences, no explanation. Each element must have:
 - "title": English translation of the original Chinese title (concise, accurate)
 - "summary": 2–3 sentence geopolitical analysis in English (flag high-significance items with [HIGH])
+- "full_text_en": complete, faithful English translation of the full_text field
 - "url": copy the original URL unchanged
 
 Your output must be parseable by JSON.parse() with no preprocessing.`;
@@ -137,6 +138,7 @@ Your output must be parseable by JSON.parse() with no preprocessing.`;
 interface AiArticle {
 	title: string;
 	summary: string;
+	full_text_en: string;
 	url: string;
 }
 
@@ -288,6 +290,7 @@ async function runPipeline(env: Env): Promise<string> {
 			title: ai.title ?? scraped?.title,
 			summary: ai.summary,
 			fullText: scraped?.full_text,
+			fullTextEn: ai.full_text_en,
 			url: ai.url || scraped?.url,
 			isPreserved: 0,
 		});

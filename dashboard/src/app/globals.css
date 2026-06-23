@@ -130,3 +130,13 @@
     @apply font-sans;
 	}
 }
+
+/* Playfair Display serif for editorial headings */
+@theme inline {
+  --font-serif: var(--font-playfair);
+}
+
+/* Improved light-mode contrast overrides */
+:root {
+  --muted-foreground: oklch(0.42 0 0);
+}

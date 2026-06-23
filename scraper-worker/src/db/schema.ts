@@ -15,6 +15,7 @@ export const intelArticles = sqliteTable('intel_articles', {
 	title: text('title'),
 	summary: text('summary'),
 	fullText: text('full_text'),
+	fullTextEn: text('full_text_en'),
 	url: text('url'),
 	isPreserved: integer('is_preserved').default(0),
 	createdAt: text('created_at').default(sql`(datetime('now'))`),
