@@ -16,6 +16,7 @@ export default function IntelViewer({ briefings }: Props) {
 	const [selectedId, setSelectedId] = useState<number | null>(
 		briefings.length > 0 ? briefings[0].id : null,
 	);
+	const [showRaw, setShowRaw] = useState(false);
 
 	const selected = briefings.find((b) => b.id === selectedId) ?? null;
 
@@ -89,7 +90,7 @@ export default function IntelViewer({ briefings }: Props) {
 						return (
 							<button
 								key={b.id}
-								onClick={() => setSelectedId(b.id)}
+								onClick={() => { setSelectedId(b.id); setShowRaw(false); }}
 								className={[
 									'w-full text-left rounded-md px-3 py-3 transition-all duration-100 group',
 									isActive
@@ -141,13 +142,38 @@ export default function IntelViewer({ briefings }: Props) {
 							<h2 className="text-3xl font-bold text-slate-100 tracking-tight font-mono">
 								{selected.trackingDate}
 							</h2>
-							<p className="text-xs text-slate-500 mt-2">
-								Chinese Provincial Press Monitor · 7 Sources · CST Morning Edition
-							</p>
+							<div className="flex items-center justify-between mt-3">
+								<p className="text-xs text-slate-500">
+									Chinese Provincial Press Monitor · 7 Sources · CST Morning Edition
+								</p>
+								{selected.rawScrapedText && (
+									<button
+										onClick={() => setShowRaw((v) => !v)}
+										className={[
+											'flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border transition-colors',
+											showRaw
+												? 'bg-amber-500/10 border-amber-500/40 text-amber-400'
+												: 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600',
+										].join(' ')}
+									>
+										<span>{showRaw ? '🔤' : '🈳'}</span>
+										{showRaw ? 'Show English' : 'View Source 中文'}
+									</button>
+								)}
+							</div>
 						</header>
 
-						{/* Markdown body */}
-						{selected.aiAnalysisMarkdown ? (
+						{/* Content body */}
+						{showRaw ? (
+							<div className="rounded-lg border border-amber-500/20 bg-slate-900/60 p-6">
+								<p className="text-[10px] font-bold tracking-[0.2em] uppercase text-amber-500 mb-4">
+									Raw Scraped Chinese Text
+								</p>
+								<pre className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap break-words font-mono">
+									{selected.rawScrapedText}
+								</pre>
+							</div>
+						) : selected.aiAnalysisMarkdown ? (
 							<div
 								className="
 									prose prose-invert prose-slate max-w-none
