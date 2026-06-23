@@ -14,7 +14,7 @@ An automated intelligence extraction pipeline that scrapes seven Chinese provinc
                         │                    │                      │
                         │   1. CST date      │                      │
                         │   2. Puppeteer ────┤ 7 provincial papers  │
-                        │   3. Claude        │ analysis + markdown  │
+                        │   3. Workers AI    │ analysis + markdown  │
                         │   4. D1 upsert  ◄──┘                      │
                         │   5. Resend email (optional)              │
                         └────────────────┬─────────────────────────┘
@@ -113,9 +113,8 @@ Secrets override the `vars` default — setting `ENABLE_EMAIL="true"` as a secre
 ## Setup & deployment
 
 ### Prerequisites
-- Cloudflare account with Workers, D1, and Browser Rendering enabled
+- Cloudflare account with Workers, D1, Browser Rendering, and Workers AI enabled
 - Wrangler CLI authenticated: `npx wrangler login`
-- Anthropic API key
 
 ### 1. Create the D1 table
 
@@ -130,21 +129,14 @@ npx wrangler d1 execute intel_briefings_db --remote --command \
   );"
 ```
 
-### 2. Set required Worker secrets
-
-```bash
-cd scraper-worker
-npx wrangler secret put ANTHROPIC_API_KEY
-```
-
-### 3. Deploy the Worker
+### 2. Deploy the Worker
 
 ```bash
 cd scraper-worker
 npm run deploy
 ```
 
-### 4. Deploy the Dashboard
+### 3. Deploy the Dashboard
 
 ```bash
 cd dashboard
@@ -174,7 +166,7 @@ curl "http://localhost:8787/__scheduled?cron=0+22+*+*+*"
 | Layer | Technology |
 |---|---|
 | Scraper runtime | Cloudflare Workers + `@cloudflare/puppeteer` |
-| AI analysis | Anthropic `claude-3-5-sonnet-latest` via `@anthropic-ai/sdk` |
+| AI analysis | Cloudflare Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (free tier) |
 | Database | Cloudflare D1 (SQLite) via Drizzle ORM |
 | Email (optional) | Resend API |
 | Dashboard | Next.js 16 (App Router) deployed as a Cloudflare Worker via `@opennextjs/cloudflare` |
