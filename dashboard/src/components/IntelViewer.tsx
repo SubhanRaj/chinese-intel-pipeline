@@ -373,29 +373,29 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 			</CardHeader>
 
 			<CardContent className="pt-0 pb-4 space-y-3">
-				{/* AI summary */}
+				{/* AI summary — clamped to 2 lines on mobile, full on sm+ */}
 				{article.summary && (
-					<p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed">
+					<p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2 sm:line-clamp-none">
 						{article.summary.replace(/\[HIGH\]/g, '').trim()}
 					</p>
 				)}
 
-				{/* Action row */}
-				<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-2 gap-2 border-t border-slate-100 dark:border-slate-800">
-					<div className="flex items-center gap-4">
+				{/* Action row — always single horizontal row */}
+				<div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+					<div className="flex items-center gap-3">
 						<button
 							onClick={() => onReadFull(article)}
-							className="inline-flex items-center gap-2 text-base font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors py-1"
+							className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors py-1"
 						>
-							<IconArticle size={18} />
-							Read Full Article
+							<IconArticle size={16} />
+							<span>Read Full Article</span>
 						</button>
 						{safeUrl(article.url) && (
 							<a
 								href={safeUrl(article.url)!}
 								target="_blank"
 								rel="noopener noreferrer"
-								className="inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors hover:underline underline-offset-2"
+								className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors hover:underline underline-offset-2"
 							>
 								<IconExternalLink size={14} />
 								Source
@@ -403,20 +403,21 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 						)}
 					</div>
 
-					<div className="flex items-center gap-1 print:hidden self-end sm:self-auto">
+					<div className="flex items-center gap-0.5 print:hidden">
 						<Button
 							variant="ghost"
 							size="sm"
 							onClick={() => onPreserve(article.id, article.isPreserved ?? 0)}
 							className={[
-								'h-8 px-3 text-sm gap-1.5',
+								'h-8 px-2 sm:px-3 text-sm gap-1.5',
 								article.isPreserved
 									? 'text-amber-600 dark:text-amber-400'
 									: 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400',
 							].join(' ')}
+							title={article.isPreserved ? 'Unpreserve' : 'Preserve'}
 						>
 							{article.isPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
-							{article.isPreserved ? 'Preserved' : 'Preserve'}
+							<span className="hidden sm:inline">{article.isPreserved ? 'Preserved' : 'Preserve'}</span>
 						</Button>
 
 						<Button
@@ -425,7 +426,7 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 							onClick={() => !article.isPreserved && onDelete(article.id)}
 							disabled={!!article.isPreserved}
 							className={[
-								'h-8 px-3 text-sm gap-1.5',
+								'h-8 px-2 sm:px-3 text-sm gap-1.5',
 								article.isPreserved
 									? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
 									: 'text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400',
@@ -433,7 +434,7 @@ function ArticleCard({ article, onPreserve, onDelete, onReadFull }: ArticleCardP
 							title={article.isPreserved ? 'Unpreserve before deleting' : 'Delete'}
 						>
 							{article.isPreserved ? <IconLock size={15} /> : <IconTrash size={15} />}
-							{article.isPreserved ? 'Locked' : 'Delete'}
+							<span className="hidden sm:inline">{article.isPreserved ? 'Locked' : 'Delete'}</span>
 						</Button>
 					</div>
 				</div>
