@@ -100,9 +100,10 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 				if (briefings.some(b => b.id === id)) setSelectedId(id);
 			}
 
-			const savedSidebar = localStorage.getItem('intel-sidebar');
+			// 'intel-sidebar-v2' key — v1 had stale '0' values from early testing
+			const savedSidebar = localStorage.getItem('intel-sidebar-v2');
 			if (savedSidebar !== null) setSidebarOpen(savedSidebar === '1');
-			else setSidebarOpen(window.innerWidth >= 768); // default: open on desktop, closed on mobile
+			else setSidebarOpen(window.innerWidth > 768);
 		} catch { /* storage unavailable */ }
 		setHydrated(true);
 	}, []);
@@ -149,7 +150,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 
 	const persistSidebar = (open: boolean) => {
 		setSidebarOpen(open);
-		try { localStorage.setItem('intel-sidebar', open ? '1' : '0'); } catch { /* */ }
+		try { localStorage.setItem('intel-sidebar-v2', open ? '1' : '0'); } catch { /* */ }
 	};
 
 	useEffect(() => {
