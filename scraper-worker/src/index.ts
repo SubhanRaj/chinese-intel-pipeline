@@ -533,6 +533,8 @@ async function clusterArticlesWithAI(ai: any, articles: AiArticleWithSource[]): 
 
 // ---------- email ----------
 
+const DASHBOARD_URL = 'https://dashboard.shubhanraj2002.workers.dev';
+
 async function sendEmail(
 	resendApiKey: string,
 	from: string,
@@ -540,41 +542,88 @@ async function sendEmail(
 	date: string,
 	articles: AiArticle[],
 ): Promise<void> {
-	const htmlContent = `
-<div style="font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; max-width: 650px; margin: 0 auto; background-color: #f8fafc; padding: 24px; color: #0f172a;">
+	// Table-based layout — Gmail strips <style> blocks so all CSS must be inline.
+	// max-width 580px + width:100% makes it readable on both desktop and mobile Gmail.
+	const articleRows = articles.map(a => {
+		const isHigh = a.summary?.includes('[HIGH]');
+		const summary = (a.summary ?? '').replace(/\[HIGH\]/g, '').trim();
+		const category = a.category ?? '';
+		return `
+      <tr>
+        <td style="padding:16px 0;border-bottom:1px solid #f1f5f9">
+          <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+            <tr>
+              <td style="padding-bottom:6px">
+                ${category ? `<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8">${category}</span>` : ''}
+                ${isHigh ? `&nbsp;<span style="display:inline-block;padding:2px 7px;background:#ef4444;color:#ffffff;font-size:10px;font-weight:700;text-transform:uppercase;border-radius:4px;vertical-align:middle">HIGH</span>` : ''}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-bottom:8px">
+                <p style="margin:0;font-size:16px;font-weight:600;color:#0f172a;line-height:1.4">${a.title ?? ''}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-bottom:12px">
+                <p style="margin:0;font-size:14px;color:#475569;line-height:1.65">${summary}</p>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <a href="${DASHBOARD_URL}" target="_blank" style="font-size:13px;font-weight:600;color:#ef4444;text-decoration:none">View in Dashboard →</a>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>`;
+	}).join('');
 
-  <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 16px; margin-bottom: 24px;">
-    <p style="color: #ef4444; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 8px 0;">
-      Intelligence Briefing
-    </p>
-    <h1 style="color: #0f172a; font-size: 36px; font-weight: 700; margin: 0; letter-spacing: -0.025em;">
-      ${date}
-    </h1>
-    <p style="color: #64748b; font-size: 14px; margin-top: 8px; margin-bottom: 0;">
-      Chinese Provincial Press Monitor &bull; ${articles.length} Articles &bull; CST Morning Edition
-    </p>
-  </div>
+	const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>China Intel Briefing — ${date}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f8fafc;-webkit-text-size-adjust:100%">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:#f8fafc">
+    <tr>
+      <td align="center" style="padding:24px 16px">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:580px">
 
-  ${articles.map((a) => `
-    <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);">
-      <h2 style="color: #0f172a; font-size: 18px; font-weight: 600; margin: 0 0 12px 0; line-height: 1.4;">
-        ${a.title ?? '(no title)'}
-      </h2>
-      <p style="color: #475569; font-size: 15px; line-height: 1.6; margin: 0 0 20px 0;">
-        ${a.summary ?? ''}
-      </p>
-      <div style="border-top: 1px solid #f1f5f9; padding-top: 16px;">
-        <a href="${a.url ?? '#'}" target="_blank" style="color: #ef4444; font-size: 14px; font-weight: 500; text-decoration: none;">
-          View Source URL →
-        </a>
-      </div>
-    </div>
-  `).join('')}
+          <!-- Header -->
+          <tr>
+            <td style="padding-bottom:20px;border-bottom:2px solid #e2e8f0">
+              <p style="margin:0 0 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#ef4444;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif">Intelligence Briefing</p>
+              <h1 style="margin:0 0 6px;font-size:26px;font-weight:700;color:#0f172a;letter-spacing:-0.02em;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif">${date}</h1>
+              <p style="margin:0;font-size:13px;color:#64748b;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif">Chinese Provincial Press Monitor &bull; ${articles.length} stories &bull; CST Morning Edition</p>
+            </td>
+          </tr>
 
-  <div style="margin-top: 32px; text-align: center; color: #94a3b8; font-size: 12px;">
-    <p>This is an automated intelligence brief generated via Cloudflare Workers AI.</p>
-  </div>
-</div>`;
+          <!-- Stories -->
+          <tr>
+            <td style="font-family:ui-sans-serif,system-ui,-apple-system,sans-serif">
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                ${articleRows}
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding-top:24px;text-align:center">
+              <a href="${DASHBOARD_URL}" target="_blank" style="display:inline-block;padding:10px 24px;background:#ef4444;color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;border-radius:6px;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif">Open Full Briefing</a>
+              <p style="margin:16px 0 0;font-size:11px;color:#94a3b8;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif">Automated briefing &bull; Cloudflare Workers AI &bull; Chinese Provincial Press</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 
 	const res = await fetch('https://api.resend.com/emails', {
 		method: 'POST',
