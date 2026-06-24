@@ -1,7 +1,7 @@
 import puppeteer from '@cloudflare/puppeteer';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, sql as drizzleSql } from 'drizzle-orm';
-import { intelBriefings, intelArticles, tempArticles } from './db/schema';
+import { intelBriefings, intelArticles, intelClusters, tempArticles } from './db/schema';
 
 export interface Env {
 	DB: D1Database;
@@ -443,6 +443,94 @@ async function analyseWithWorkersAI(ai: any, articles: ScrapedArticle[]): Promis
 	return articles.map(a => ({ title: a.title, summary: 'Analysis unavailable.', full_text_en: '', url: a.url, category: 'Uncategorized' }));
 }
 
+// ── Pass 3: cluster ───────────────────────────────────────────────────────────
+// Groups articles that cover the same event across multiple newspapers into one
+// cluster. The synthesised title/summary is shown on the card; individual source
+// perspectives are shown inside the drawer.
+
+const CLUSTER_PROMPT = `You are an intelligence analyst. You will receive a JSON array of analysed news articles, each with index, title, summary, and source newspaper.
+
+Group articles that cover the SAME news event or topic into clusters. Articles about different topics must be in separate clusters.
+
+Return ONLY a valid JSON array — no markdown, no code fences, no explanation:
+[
+  {
+    "title": "Synthesised English headline drawing on all sources' angles",
+    "summary": "2-3 sentence synthesis. If papers frame the story differently, briefly note that.",
+    "category": "Political | Military | Economic | Technology | Social | Foreign Affairs",
+    "article_indices": [0, 2]
+  }
+]
+
+Rules:
+- Every article index must appear in exactly one cluster
+- Standalone unique articles form single-element clusters: "article_indices": [3]
+- The synthesised summary should be richer than any single source's summary
+- Your output must be parseable by JSON.parse()`;
+
+interface ClusterResult {
+	title: string;
+	summary: string;
+	category: string;
+	article_indices: number[];
+}
+
+interface AiArticleWithSource extends AiArticle {
+	source: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function clusterArticlesWithAI(ai: any, articles: AiArticleWithSource[]): Promise<ClusterResult[]> {
+	if (articles.length <= 1) {
+		return articles.map((a, i) => ({
+			title: a.title,
+			summary: a.summary,
+			category: a.category,
+			article_indices: [i],
+		}));
+	}
+
+	const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+		max_tokens: 2048,
+		messages: [
+			{ role: 'system', content: CLUSTER_PROMPT },
+			{
+				role: 'user',
+				content: JSON.stringify(
+					articles.map((a, i) => ({
+						index: i,
+						title: a.title,
+						summary: a.summary.slice(0, 150),
+						source: a.source,
+					})),
+				).slice(0, 4_000),
+			},
+		],
+	});
+
+	const rawText = extractAiText(response);
+	if (!rawText) {
+		console.warn('[CLUSTER AI] Bad response shape — treating each article as its own cluster');
+		return articles.map((a, i) => ({ title: a.title, summary: a.summary, category: a.category, article_indices: [i] }));
+	}
+
+	const parsed = extractJsonArray(rawText);
+	if (parsed && parsed.length > 0 && 'article_indices' in (parsed[0] as object)) {
+		const clusters = parsed as ClusterResult[];
+		// Validate every index is covered exactly once
+		const covered = new Set(clusters.flatMap(c => c.article_indices));
+		const allCovered = articles.every((_, i) => covered.has(i));
+		if (allCovered) {
+			const multiCount = clusters.filter(c => c.article_indices.length > 1).length;
+			console.log(`[CLUSTER AI] ${clusters.length} clusters (${multiCount} multi-source) from ${articles.length} articles`);
+			return clusters;
+		}
+	}
+
+	console.warn('[CLUSTER AI] Invalid output (missing indices) — treating each article as its own cluster');
+	return articles.map((a, i) => ({ title: a.title, summary: a.summary, category: a.category, article_indices: [i] }));
+}
+
 // ---------- email ----------
 
 async function sendEmail(
@@ -604,24 +692,53 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 			set: { rawScrapedText, aiAnalysisMarkdown: 'articles', emailStatus: 0 },
 		});
 
-	// ── Step 6: Insert analyzed (important) articles into intel_articles ──
-	for (let i = 0; i < aiArticles.length; i++) {
-		const ai = aiArticles[i];
-		const scraped = importantScraped[i];
-		await db.insert(intelArticles).values({
-			trackingDate,
-			title: ai.title ?? scraped?.title,
-			summary: ai.summary,
-			fullText: scraped?.full_text,
-			fullTextEn: ai.full_text_en,
-			url: ai.url || scraped?.url,
-			category: ai.category ?? null,
-			source: scraped?.source ?? null,
-			isPreserved: 0,
-		});
+	// ── Step 6: Pass 3 — cluster same-topic articles across sources ──
+	const articlesWithSource: AiArticleWithSource[] = aiArticles.map((a, i) => ({
+		...a,
+		source: importantScraped[i]?.source ?? 'Unknown',
+	}));
+	console.log(`Pass 3: clustering ${articlesWithSource.length} articles…`);
+	const clusters = await clusterArticlesWithAI(env.AI, articlesWithSource);
+
+	// ── Step 7: Insert clusters, then articles with cluster_id set ──
+	for (const cluster of clusters) {
+		const clusterSources = [
+			...new Set(cluster.article_indices.map(i => importantScraped[i]?.source).filter(Boolean) as string[]),
+		];
+
+		const clusterRows = await db
+			.insert(intelClusters)
+			.values({
+				trackingDate,
+				title: cluster.title,
+				summary: cluster.summary,
+				category: cluster.category,
+				sources: JSON.stringify(clusterSources),
+			})
+			.returning({ id: intelClusters.id });
+
+		const clusterId = clusterRows[0].id;
+
+		for (const idx of cluster.article_indices) {
+			const ai = aiArticles[idx];
+			const scraped = importantScraped[idx];
+			if (!ai || !scraped) continue;
+			await db.insert(intelArticles).values({
+				trackingDate,
+				title: ai.title ?? scraped.title,
+				summary: ai.summary,
+				fullText: scraped.full_text,
+				fullTextEn: ai.full_text_en,
+				url: ai.url || scraped.url,
+				category: ai.category ?? null,
+				source: scraped.source ?? null,
+				isPreserved: 0,
+				clusterId,
+			});
+		}
 	}
 
-	console.log(`Saved ${aiArticles.length} important articles to intel_articles.`);
+	console.log(`Saved ${clusters.length} clusters (${aiArticles.length} articles) to D1.`);
 
 	// 30-day cleanup of unpreserved articles
 	await env.DB.prepare(
@@ -631,12 +748,20 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 	if (env.ENABLE_EMAIL === 'true') {
 		console.log('Email dispatch enabled — sending via Resend…');
 		try {
+			// Email one entry per cluster (synthesised title + summary); link to first article URL
+			const emailArticles: AiArticle[] = clusters.map(c => ({
+				title: c.title,
+				summary: c.summary,
+				full_text_en: '',
+				url: aiArticles[c.article_indices[0]]?.url ?? '',
+				category: c.category,
+			}));
 			await sendEmail(
 				env.RESEND_API_KEY,
 				env.RESEND_FROM_EMAIL,
 				env.RESEND_TO_EMAIL,
 				trackingDate,
-				aiArticles,
+				emailArticles,
 			);
 			await db
 				.update(intelBriefings)

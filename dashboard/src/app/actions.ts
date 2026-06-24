@@ -36,6 +36,37 @@ export async function unpreserveAndDelete(id: number) {
 	revalidatePath('/');
 }
 
+/** Preserve or unpreserve every article in a cluster in one action. */
+export async function togglePreserveCluster(ids: number[], currentlyPreserved: boolean) {
+	if (!ids.length || !ids.every(validId)) return;
+
+	const { env } = await getCloudflareContext({ async: true });
+	const db = drizzle(env.DB);
+	const next = currentlyPreserved ? 0 : 1;
+	for (const id of ids) {
+		await db.update(intelArticles).set({ isPreserved: next }).where(eq(intelArticles.id, id));
+	}
+	revalidatePath('/');
+}
+
+/** Delete all non-preserved articles in a cluster. Preserved ones are silently skipped. */
+export async function deleteCluster(ids: number[]) {
+	if (!ids.length || !ids.every(validId)) return;
+
+	const { env } = await getCloudflareContext({ async: true });
+	const db = drizzle(env.DB);
+	for (const id of ids) {
+		const rows = await db
+			.select({ isPreserved: intelArticles.isPreserved })
+			.from(intelArticles)
+			.where(eq(intelArticles.id, id))
+			.limit(1);
+		if (!rows.length || rows[0].isPreserved) continue;
+		await db.delete(intelArticles).where(eq(intelArticles.id, id));
+	}
+	revalidatePath('/');
+}
+
 export async function deleteArticle(id: number) {
 	if (!validId(id)) return;
 

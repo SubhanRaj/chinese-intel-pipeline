@@ -15,7 +15,6 @@ import {
 	IconBookmarkFilled,
 	IconTrash,
 	IconX,
-	IconArticle,
 	IconLanguage,
 	IconLock,
 	IconMenu2,
@@ -24,25 +23,27 @@ import {
 	IconLayoutGrid,
 	IconCheck,
 	IconMinus,
+	IconArticle,
+	IconBuildings,
 } from '@tabler/icons-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { togglePreserve, deleteArticle, unpreserveAndDelete } from '@/app/actions';
+import { togglePreserve, deleteArticle, unpreserveAndDelete, togglePreserveCluster, deleteCluster } from '@/app/actions';
 import { safeUrl } from '@/lib/utils';
-import type { IntelBriefing, IntelArticle, TempArticle } from '@/db/schema';
+import type { IntelBriefing, IntelArticle, IntelCluster, TempArticle } from '@/db/schema';
 
 const MarkdownRenderer = dynamic(() => import('./MarkdownRenderer'), { ssr: false });
 
 // ── Category colours ──────────────────────────────────────────────────────────
 
 const CATEGORY_STYLES: Record<string, string> = {
-	'Political':      'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-	'Military':       'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-	'Economic':       'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-	'Technology':     'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-	'Social':         'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-	'Foreign Affairs':'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+	'Political':       'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+	'Military':        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+	'Economic':        'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+	'Technology':      'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+	'Social':          'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+	'Foreign Affairs': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
 };
 
 function categoryStyle(cat: string | null | undefined): string {
@@ -54,18 +55,27 @@ function categoryStyle(cat: string | null | undefined): string {
 interface Props {
 	briefings: IntelBriefing[];
 	articles: IntelArticle[];
+	clusters: IntelCluster[];
 	feed: TempArticle[];
 }
 
 type View = 'briefing' | 'preserved' | 'feed';
 
-export default function IntelViewer({ briefings, articles, feed }: Props) {
+// ── Drawer state ──────────────────────────────────────────────────────────────
+
+interface DrawerState {
+	cluster: IntelCluster;
+	articles: IntelArticle[];
+}
+
+export default function IntelViewer({ briefings, articles, clusters, feed }: Props) {
 	const [selectedId, setSelectedId] = useState<number | null>(
 		briefings.length > 0 ? briefings[0].id : null,
 	);
 	const [dark, setDark] = useState(false);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const [drawerArticle, setDrawerArticle] = useState<IntelArticle | null>(null);
+	const [drawer, setDrawer] = useState<DrawerState | null>(null);
+	const [preservedDrawer, setPreservedDrawer] = useState<IntelArticle | null>(null);
 	const [view, setView] = useState<View>('briefing');
 	const [searchQuery, setSearchQuery] = useState('');
 	const [, startTransition] = useTransition();
@@ -75,32 +85,55 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 	}, [dark]);
 
 	useEffect(() => {
-		const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawerArticle(null); };
+		const handler = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') { setDrawer(null); setPreservedDrawer(null); }
+		};
 		window.addEventListener('keydown', handler);
 		return () => window.removeEventListener('keydown', handler);
 	}, []);
 
-	const selected = briefings.find((b) => b.id === selectedId) ?? null;
-	const selectedArticles = selected
-		? articles.filter((a) => a.trackingDate === selected.trackingDate)
-		: [];
-	const preservedArticles = articles.filter((a) => a.isPreserved);
+	const selected = briefings.find(b => b.id === selectedId) ?? null;
+	const selectedArticles = selected ? articles.filter(a => a.trackingDate === selected.trackingDate) : [];
+	const selectedClusters = selected ? clusters.filter(c => c.trackingDate === selected.trackingDate) : [];
+	const preservedArticles = articles.filter(a => a.isPreserved);
 
-	const hasArticles = selectedArticles.length > 0;
 	const hasMarkdown = selected?.aiAnalysisMarkdown && selected.aiAnalysisMarkdown !== 'articles';
 
-	// Feed: most recent tracking_date in temp_articles
-	const feedDate = feed.length > 0 ? feed[0].trackingDate : null;
-	const todayFeed = feedDate ? feed.filter(a => a.trackingDate === feedDate) : [];
-	// Group by source, preserving insertion order of first occurrence
-	const feedBySource = todayFeed.reduce<Record<string, TempArticle[]>>((acc, a) => {
-		if (!acc[a.source]) acc[a.source] = [];
-		acc[a.source].push(a);
-		return acc;
-	}, {});
+	// Build display items for the briefing view:
+	// - If clusters exist for this date → use them (new data)
+	// - Fallback: wrap individual articles as single-item virtual clusters (old data)
+	type DisplayItem = { cluster: IntelCluster; clusterArticles: IntelArticle[] };
 
-	// Search filtering
-	function matchesSearch(a: IntelArticle) {
+	const displayItems: DisplayItem[] = selectedClusters.length > 0
+		? selectedClusters.map(c => ({
+			cluster: c,
+			clusterArticles: selectedArticles.filter(a => a.clusterId === c.id),
+		}))
+		: selectedArticles.map(a => ({
+			cluster: {
+				id: a.id,
+				trackingDate: a.trackingDate,
+				title: a.title,
+				summary: a.summary,
+				category: a.category,
+				sources: JSON.stringify(a.source ? [a.source] : []),
+				createdAt: a.createdAt,
+			} as IntelCluster,
+			clusterArticles: [a],
+		}));
+
+	// Search filter for briefing view
+	function matchesBriefingSearch(item: DisplayItem) {
+		if (!searchQuery) return true;
+		const q = searchQuery.toLowerCase();
+		return (
+			(item.cluster.title?.toLowerCase().includes(q) ?? false) ||
+			(item.cluster.summary?.toLowerCase().includes(q) ?? false) ||
+			item.clusterArticles.some(a => a.source?.toLowerCase().includes(q))
+		);
+	}
+
+	function matchesPreservedSearch(a: IntelArticle) {
 		if (!searchQuery) return true;
 		const q = searchQuery.toLowerCase();
 		return (
@@ -110,13 +143,21 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 		);
 	}
 
-	const visibleBriefingArticles = selectedArticles.filter(matchesSearch);
-	const visiblePreservedArticles = preservedArticles.filter(matchesSearch);
+	const visibleDisplayItems = displayItems.filter(matchesBriefingSearch);
+	const visiblePreservedArticles = preservedArticles.filter(matchesPreservedSearch);
+
+	// Feed data
+	const feedDate = feed.length > 0 ? feed[0].trackingDate : null;
+	const todayFeed = feedDate ? feed.filter(a => a.trackingDate === feedDate) : [];
+	const feedBySource = todayFeed.reduce<Record<string, TempArticle[]>>((acc, a) => {
+		if (!acc[a.source]) acc[a.source] = [];
+		acc[a.source].push(a);
+		return acc;
+	}, {});
 
 	// ── Sidebar ───────────────────────────────────────────────────────────────
 	const sidebar = (
 		<>
-			{/* Mobile backdrop */}
 			<div
 				onClick={() => setSidebarOpen(false)}
 				className={[
@@ -124,7 +165,6 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 					sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
 				].join(' ')}
 			/>
-
 			<aside className={[
 				'fixed md:relative inset-y-0 left-0 z-30 w-80 shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 print:hidden transition-transform duration-300 ease-in-out md:translate-x-0',
 				sidebarOpen ? 'translate-x-0' : '-translate-x-full',
@@ -141,7 +181,7 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 					</div>
 					<div className="flex items-center gap-1">
 						<button
-							onClick={() => setDark((d) => !d)}
+							onClick={() => setDark(d => !d)}
 							className="mt-1 p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
 							aria-label="Toggle colour mode"
 						>
@@ -158,7 +198,7 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 				</div>
 
 				<nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
-					{/* ── Preserved section ────────────────────────────────── */}
+					{/* ── Preserved ── */}
 					{preservedArticles.length > 0 && (
 						<div>
 							<button
@@ -176,20 +216,16 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 								</span>
 								<IconChevronRight size={11} className="text-amber-500" />
 							</button>
-							{preservedArticles.map((a) => (
+							{preservedArticles.map(a => (
 								<button
 									key={a.id}
-									onClick={() => { setDrawerArticle(a); setSidebarOpen(false); }}
+									onClick={() => { setPreservedDrawer(a); setSidebarOpen(false); }}
 									className="w-full text-left rounded-lg px-3 py-2 mb-0.5 flex items-start gap-2.5 transition-all duration-100 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 group"
 								>
 									<IconBookmark size={13} className="shrink-0 mt-0.5 text-amber-500" />
 									<div className="flex-1 min-w-0">
-										<p className="text-xs font-medium leading-snug truncate">
-											{a.title ?? 'Untitled'}
-										</p>
-										<p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">
-											{a.trackingDate}
-										</p>
+										<p className="text-xs font-medium leading-snug truncate">{a.title ?? 'Untitled'}</p>
+										<p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">{a.trackingDate}</p>
 									</div>
 									<IconChevronRight size={11} className="shrink-0 mt-1 opacity-0 group-hover:opacity-100 text-slate-400 transition-opacity" />
 								</button>
@@ -198,7 +234,7 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 						</div>
 					)}
 
-					{/* ── Today's Feed ─────────────────────────────────── */}
+					{/* ── Today's Feed ── */}
 					{todayFeed.length > 0 && (
 						<div>
 							<button
@@ -220,7 +256,7 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 						</div>
 					)}
 
-					{/* ── Date list ────────────────────────────────────────── */}
+					{/* ── Briefings list ── */}
 					<div>
 						{briefings.length > 0 && (
 							<p className="px-3 mb-1 text-[10px] font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500">
@@ -232,12 +268,12 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 								No briefings on record yet.
 							</p>
 						) : (
-							briefings.map((b) => {
+							briefings.map(b => {
 								const isActive = selectedId === b.id && view === 'briefing';
 								return (
 									<button
 										key={b.id}
-										onClick={() => { setSelectedId(b.id); setView('briefing'); setDrawerArticle(null); setSearchQuery(''); setSidebarOpen(false); }}
+										onClick={() => { setSelectedId(b.id); setView('briefing'); setDrawer(null); setSearchQuery(''); setSidebarOpen(false); }}
 										className={[
 											'w-full text-left rounded-lg px-3 py-2.5 mb-0.5 flex items-center gap-3 transition-all duration-100',
 											isActive
@@ -246,9 +282,7 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 										].join(' ')}
 									>
 										<IconCalendar size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
-										<span className="flex-1 text-sm font-mono font-medium tracking-wide">
-											{b.trackingDate}
-										</span>
+										<span className="flex-1 text-sm font-mono font-medium tracking-wide">{b.trackingDate}</span>
 										{isActive && <IconChevronRight size={13} className="text-red-600 dark:text-red-500 shrink-0" />}
 									</button>
 								);
@@ -266,7 +300,7 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 		</>
 	);
 
-	// ── Mobile top bar ────────────────────────────────────────────────────────
+	// ── Mobile top bar ─────────────────────────────────────────────────────────
 	const mobileTopBar = (
 		<div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0">
 			<button
@@ -287,7 +321,7 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 		</div>
 	);
 
-	// ── Empty state ───────────────────────────────────────────────────────────
+	// ── Empty state ────────────────────────────────────────────────────────────
 	if (briefings.length === 0) {
 		return (
 			<div className="flex h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
@@ -318,14 +352,14 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 		);
 	}
 
-	// ── Search bar ────────────────────────────────────────────────────────────
+	// ── Search bar ─────────────────────────────────────────────────────────────
 	const searchBar = (
 		<div className="relative">
 			<IconSearch size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
 			<input
 				type="text"
 				value={searchQuery}
-				onChange={(e) => setSearchQuery(e.target.value)}
+				onChange={e => setSearchQuery(e.target.value)}
 				placeholder="Search articles…"
 				className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors"
 			/>
@@ -340,7 +374,7 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 		</div>
 	);
 
-	// ── Main layout ───────────────────────────────────────────────────────────
+	// ── Main layout ────────────────────────────────────────────────────────────
 	return (
 		<div className="flex h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
 			{sidebar}
@@ -349,7 +383,7 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 				{mobileTopBar}
 				<div className="flex-1 overflow-y-auto">
 
-					{/* ── Preserved articles view ────────────────────────── */}
+					{/* ── Preserved view ─────────────────────────────────── */}
 					{view === 'preserved' && (
 						<div className="max-w-3xl mx-auto px-4 sm:px-10 py-10">
 							<header className="mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
@@ -357,15 +391,12 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 									<IconArchive size={13} />
 									Preserved Articles
 								</p>
-								<h2 className="font-serif text-4xl text-slate-900 dark:text-slate-100 tracking-tight">
-									Archive
-								</h2>
+								<h2 className="font-serif text-4xl text-slate-900 dark:text-slate-100 tracking-tight">Archive</h2>
 								<p className="text-sm text-slate-500 dark:text-slate-400 mt-3">
 									{preservedArticles.length} article{preservedArticles.length !== 1 ? 's' : ''} preserved · exempt from 30-day cleanup
 								</p>
 								<div className="mt-4">{searchBar}</div>
 							</header>
-
 							{visiblePreservedArticles.length === 0 ? (
 								<div className="text-center py-16">
 									<IconBookmarkFilled size={40} className="mx-auto text-slate-200 dark:text-slate-700 mb-4" />
@@ -375,14 +406,14 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 								</div>
 							) : (
 								<div className="space-y-4">
-									{visiblePreservedArticles.map((a) => (
+									{visiblePreservedArticles.map(a => (
 										<ArticleCard
 											key={a.id}
 											article={a}
 											showDate
-											onPreserve={(id, current) => startTransition(() => togglePreserve(id, current))}
-											onDelete={(id) => startTransition(() => deleteArticle(id))}
-											onReadFull={(article) => setDrawerArticle(article)}
+											onPreserve={(id, cur) => startTransition(() => togglePreserve(id, cur))}
+											onDelete={id => startTransition(() => deleteArticle(id))}
+											onReadFull={a => setPreservedDrawer(a)}
 										/>
 									))}
 								</div>
@@ -412,7 +443,6 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 									Click any source link to read the original. AI reasoning shown below each title.
 								</p>
 							</header>
-
 							{Object.entries(feedBySource).map(([source, arts]) => (
 								<div key={source} className="mb-8">
 									<div className="flex items-center gap-3 mb-3">
@@ -422,13 +452,9 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 										<div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
 										<span className="text-[10px] font-mono text-slate-400">{arts.length} articles</span>
 									</div>
-
 									<div className="space-y-2">
 										{arts.map(a => (
-											<div
-												key={a.id}
-												className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-3 flex items-start gap-3"
-											>
+											<div key={a.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-3 flex items-start gap-3">
 												<div className="mt-0.5 shrink-0">
 													{a.isImportant ? (
 														<span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
@@ -440,36 +466,18 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 														</span>
 													)}
 												</div>
-
 												<div className="flex-1 min-w-0">
-													<p className={[
-														'text-sm font-medium leading-snug',
-														a.isImportant
-															? 'text-slate-900 dark:text-slate-100'
-															: 'text-slate-500 dark:text-slate-500',
-													].join(' ')}>
+													<p className={['text-sm font-medium leading-snug', a.isImportant ? 'text-slate-900 dark:text-slate-100' : 'text-slate-500 dark:text-slate-500'].join(' ')}>
 														{a.titleEn ?? a.title}
 													</p>
 													{a.importanceReason && (
-														<p className={[
-															'text-[11px] mt-1 leading-relaxed',
-															a.isImportant
-																? 'text-emerald-600 dark:text-emerald-500'
-																: 'text-slate-400 dark:text-slate-600',
-														].join(' ')}>
+														<p className={['text-[11px] mt-1 leading-relaxed', a.isImportant ? 'text-emerald-600 dark:text-emerald-500' : 'text-slate-400 dark:text-slate-600'].join(' ')}>
 															{a.isImportant ? '✓ ' : '— '}{a.importanceReason}
 														</p>
 													)}
 												</div>
-
 												{safeUrl(a.url) && (
-													<a
-														href={safeUrl(a.url)!}
-														target="_blank"
-														rel="noopener noreferrer"
-														className="shrink-0 mt-0.5 text-slate-300 dark:text-slate-700 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
-														title="Open original article"
-													>
+													<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-0.5 text-slate-300 dark:text-slate-700 hover:text-blue-500 dark:hover:text-blue-400 transition-colors" title="Open original article">
 														<IconExternalLink size={14} />
 													</a>
 												)}
@@ -481,7 +489,7 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 						</div>
 					)}
 
-					{/* ── Daily briefing view ────────────────────────────── */}
+					{/* ── Daily briefing view ─────────────────────────────── */}
 					{view === 'briefing' && (
 						selected === null ? (
 							<div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
@@ -511,21 +519,22 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 											Print Briefing
 										</Button>
 									</div>
-									{hasArticles && <div className="mt-4">{searchBar}</div>}
+									{displayItems.length > 0 && <div className="mt-4">{searchBar}</div>}
 								</header>
 
-								{hasArticles ? (
-									visibleBriefingArticles.length === 0 ? (
+								{displayItems.length > 0 ? (
+									visibleDisplayItems.length === 0 ? (
 										<p className="text-sm text-slate-500 text-center py-12">No articles match your search.</p>
 									) : (
 										<div className="space-y-4">
-											{visibleBriefingArticles.map((article) => (
-												<ArticleCard
-													key={article.id}
-													article={article}
-													onPreserve={(id, current) => startTransition(() => togglePreserve(id, current))}
-													onDelete={(id) => startTransition(() => deleteArticle(id))}
-													onReadFull={(article) => setDrawerArticle(article)}
+											{visibleDisplayItems.map(({ cluster, clusterArticles }) => (
+												<ClusterCard
+													key={cluster.id}
+													cluster={cluster}
+													clusterArticles={clusterArticles}
+													onOpen={() => setDrawer({ cluster, articles: clusterArticles })}
+													onPreserveAll={ids => startTransition(() => togglePreserveCluster(ids, clusterArticles.every(a => !!a.isPreserved)))}
+													onDeleteAll={ids => startTransition(() => deleteCluster(ids))}
 												/>
 											))}
 										</div>
@@ -552,28 +561,385 @@ export default function IntelViewer({ briefings, articles, feed }: Props) {
 				</div>
 			</main>
 
-			{/* Slide-in article drawer */}
-			<ArticleDrawer
-				article={drawerArticle}
-				onClose={() => setDrawerArticle(null)}
-				onPreserve={(id, current) => {
-					startTransition(() => togglePreserve(id, current));
-					setDrawerArticle((prev) => prev ? { ...prev, isPreserved: current ? 0 : 1 } : null);
+			{/* Cluster drawer — briefing view */}
+			<ClusterDrawer
+				state={drawer}
+				onClose={() => setDrawer(null)}
+				onPreserveAll={(ids, cur) => {
+					startTransition(() => togglePreserveCluster(ids, cur));
+					setDrawer(prev => prev ? {
+						...prev,
+						articles: prev.articles.map(a => ({ ...a, isPreserved: cur ? 0 : 1 })),
+					} : null);
 				}}
-				onDelete={(id) => {
-					startTransition(() => deleteArticle(id));
-					setDrawerArticle(null);
+				onDeleteAll={ids => {
+					startTransition(() => deleteCluster(ids));
+					setDrawer(null);
 				}}
-				onUnpreserveAndDelete={(id) => {
+				onUnpreserveAndDelete={id => {
 					startTransition(() => unpreserveAndDelete(id));
-					setDrawerArticle(null);
+					setDrawer(prev => prev ? { ...prev, articles: prev.articles.filter(a => a.id !== id) } : null);
+				}}
+			/>
+
+			{/* Article drawer — preserved view (single article) */}
+			<ArticleDrawer
+				article={preservedDrawer}
+				onClose={() => setPreservedDrawer(null)}
+				onPreserve={(id, cur) => {
+					startTransition(() => togglePreserve(id, cur));
+					setPreservedDrawer(prev => prev ? { ...prev, isPreserved: cur ? 0 : 1 } : null);
+				}}
+				onUnpreserveAndDelete={id => {
+					startTransition(() => unpreserveAndDelete(id));
+					setPreservedDrawer(null);
 				}}
 			/>
 		</div>
 	);
 }
 
-// ─── Article card ─────────────────────────────────────────────────────────────
+// ─── Cluster card ─────────────────────────────────────────────────────────────
+
+interface ClusterCardProps {
+	cluster: IntelCluster;
+	clusterArticles: IntelArticle[];
+	onOpen: () => void;
+	onPreserveAll: (ids: number[]) => void;
+	onDeleteAll: (ids: number[]) => void;
+}
+
+function ClusterCard({ cluster, clusterArticles, onOpen, onPreserveAll, onDeleteAll }: ClusterCardProps) {
+	const sources: string[] = (() => { try { return JSON.parse(cluster.sources ?? '[]'); } catch { return []; } })();
+	const isMultiSource = clusterArticles.length > 1;
+	const isHigh = cluster.summary?.includes('[HIGH]');
+	const anyPreserved = clusterArticles.some(a => a.isPreserved);
+	const allPreserved = clusterArticles.length > 0 && clusterArticles.every(a => a.isPreserved);
+	const ids = clusterArticles.map(a => a.id);
+
+	return (
+		<Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm py-0">
+			<CardHeader className="pt-5 pb-2">
+				<div className="flex items-start justify-between gap-3">
+					<div className="flex-1 min-w-0">
+						<div className="flex flex-wrap items-center gap-1.5 mb-2">
+							{cluster.category && (
+								<span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full ${categoryStyle(cluster.category)}`}>
+									{cluster.category}
+								</span>
+							)}
+							{sources.map(s => (
+								<span key={s} className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{s}</span>
+							))}
+							{isMultiSource && (
+								<span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+									<IconBuildings size={10} />
+									{clusterArticles.length} sources
+								</span>
+							)}
+						</div>
+						<CardTitle className="font-serif text-xl text-slate-900 dark:text-slate-100 leading-snug">
+							{cluster.title ?? 'Untitled'}
+						</CardTitle>
+					</div>
+					{isHigh && (
+						<Badge variant="destructive" className="shrink-0 text-xs px-2 py-0.5 mt-0.5">HIGH</Badge>
+					)}
+				</div>
+			</CardHeader>
+
+			<CardContent className="pt-0 pb-4 space-y-3">
+				{cluster.summary && (
+					<p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2 sm:line-clamp-none">
+						{cluster.summary.replace(/\[HIGH\]/g, '').trim()}
+					</p>
+				)}
+
+				<div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+					<button
+						onClick={onOpen}
+						className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors py-1"
+					>
+						<IconArticle size={16} />
+						{isMultiSource ? `${clusterArticles.length} Publisher Perspectives` : 'Read Full Article'}
+					</button>
+
+					<div className="flex items-center gap-0.5 print:hidden">
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={() => onPreserveAll(ids)}
+							className={[
+								'h-8 px-2 sm:px-3 text-sm gap-1.5',
+								anyPreserved
+									? 'text-amber-600 dark:text-amber-400'
+									: 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400',
+							].join(' ')}
+							title={allPreserved ? 'Unpreserve all' : 'Preserve all'}
+						>
+							{anyPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
+							<span className="hidden sm:inline">{allPreserved ? 'Preserved' : anyPreserved ? 'Partial' : 'Preserve'}</span>
+						</Button>
+
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={() => !anyPreserved && onDeleteAll(ids)}
+							disabled={anyPreserved}
+							className={[
+								'h-8 px-2 sm:px-3 text-sm gap-1.5',
+								anyPreserved
+									? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
+									: 'text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400',
+							].join(' ')}
+							title={anyPreserved ? 'Unpreserve before deleting' : 'Delete'}
+						>
+							{anyPreserved ? <IconLock size={15} /> : <IconTrash size={15} />}
+							<span className="hidden sm:inline">{anyPreserved ? 'Locked' : 'Delete'}</span>
+						</Button>
+					</div>
+				</div>
+			</CardContent>
+		</Card>
+	);
+}
+
+// ─── Cluster drawer ───────────────────────────────────────────────────────────
+
+interface ClusterDrawerProps {
+	state: DrawerState | null;
+	onClose: () => void;
+	onPreserveAll: (ids: number[], currentlyPreserved: boolean) => void;
+	onDeleteAll: (ids: number[]) => void;
+	onUnpreserveAndDelete: (id: number) => void;
+}
+
+function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserveAndDelete }: ClusterDrawerProps) {
+	const [chineseFor, setChineseFor] = useState<number | null>(null);
+	const open = state !== null;
+
+	useEffect(() => { setChineseFor(null); }, [state?.cluster.id]);
+
+	const { cluster, articles } = state ?? { cluster: null, articles: [] };
+	const sources: string[] = (() => { try { return JSON.parse(cluster?.sources ?? '[]'); } catch { return []; } })();
+	const isMultiSource = articles.length > 1;
+	const anyPreserved = articles.some(a => a.isPreserved);
+	const allPreserved = articles.length > 0 && articles.every(a => a.isPreserved);
+	const ids = articles.map(a => a.id);
+
+	return (
+		<>
+			<div
+				onClick={onClose}
+				className={['fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity duration-300', open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'].join(' ')}
+			/>
+			<div className={['fixed top-0 right-0 z-50 h-full w-full sm:w-[52%] sm:min-w-[480px] bg-white dark:bg-slate-900 shadow-2xl flex flex-col transition-transform duration-300 ease-in-out', open ? 'translate-x-0' : 'translate-x-full'].join(' ')}>
+
+				{/* Drawer header */}
+				<div className="flex items-center justify-between px-5 sm:px-7 py-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
+					<div>
+						<div className="flex items-center gap-2 mb-0.5">
+							<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500">
+								{isMultiSource ? 'Multi-Source Story' : 'Full Article'}
+							</p>
+							{cluster?.category && (
+								<span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full ${categoryStyle(cluster.category)}`}>
+									{cluster.category}
+								</span>
+							)}
+						</div>
+						<p className="text-sm text-slate-500 dark:text-slate-400">
+							{isMultiSource ? `${sources.join(' · ')} · ${articles.length} perspectives` : (sources[0] ?? '') + ' · English analysis + translation'}
+						</p>
+					</div>
+					<button
+						onClick={onClose}
+						className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+						aria-label="Close"
+					>
+						<IconX size={18} />
+					</button>
+				</div>
+
+				{/* Drawer body */}
+				<div className="flex-1 overflow-y-auto px-5 sm:px-7 py-7 space-y-8">
+					{cluster && (
+						<>
+							{/* Synthesised headline + combined summary */}
+							<div className="space-y-3">
+								<h2 className="font-serif text-2xl text-slate-900 dark:text-slate-100 leading-snug">
+									{cluster.title}
+								</h2>
+								{isMultiSource && (
+									<div className="flex flex-wrap gap-1.5">
+										{sources.map(s => (
+											<span key={s} className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+												<IconBuildings size={10} />
+												{s}
+											</span>
+										))}
+									</div>
+								)}
+								{cluster.summary && (
+									<div>
+										<p className="text-xs font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-2">
+											{isMultiSource ? 'Combined Intelligence Assessment' : 'Geopolitical Summary'}
+										</p>
+										<p className="text-base text-slate-700 dark:text-slate-200 leading-relaxed">
+											{cluster.summary.replace(/\[HIGH\]/g, '').trim()}
+										</p>
+									</div>
+								)}
+							</div>
+
+							{/* Publisher perspectives */}
+							<div>
+								<p className="text-xs font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-2">
+									<IconBuildings size={12} />
+									{isMultiSource ? `Publisher Perspectives (${articles.length})` : 'Full Article'}
+								</p>
+
+								<div className="space-y-4">
+									{articles.map(article => (
+										<div
+											key={article.id}
+											className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 overflow-hidden"
+										>
+											{/* Article header */}
+											<div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+												<div className="flex items-center gap-2 min-w-0">
+													<span className="text-xs font-semibold text-slate-600 dark:text-slate-300 shrink-0">
+														{article.source}
+													</span>
+													{safeUrl(article.url) && (
+														<a
+															href={safeUrl(article.url)!}
+															target="_blank"
+															rel="noopener noreferrer"
+															className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline underline-offset-2 truncate"
+														>
+															<IconExternalLink size={11} className="shrink-0" />
+															<span className="truncate">Source</span>
+														</a>
+													)}
+												</div>
+												<div className="flex items-center gap-2 shrink-0">
+													{article.fullText && (
+														<button
+															onClick={() => setChineseFor(chineseFor === article.id ? null : article.id)}
+															className={[
+																'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md border transition-colors',
+																chineseFor === article.id
+																	? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/40 text-amber-700 dark:text-amber-400'
+																	: 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300',
+															].join(' ')}
+														>
+															<IconLanguage size={11} />
+															{chineseFor === article.id ? 'EN' : '中文'}
+														</button>
+													)}
+													<button
+														onClick={() => togglePreserve(article.id, article.isPreserved ?? 0)}
+														className={['p-1 rounded transition-colors', article.isPreserved ? 'text-amber-500' : 'text-slate-300 dark:text-slate-600 hover:text-amber-500'].join(' ')}
+														title={article.isPreserved ? 'Unpreserve' : 'Preserve this source'}
+													>
+														{article.isPreserved ? <IconBookmarkFilled size={14} /> : <IconBookmark size={14} />}
+													</button>
+												</div>
+											</div>
+
+											{/* Article body */}
+											<div className="px-5 py-4 space-y-3">
+												{isMultiSource && (
+													<h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 leading-snug">
+														{article.title}
+													</h3>
+												)}
+
+												{chineseFor === article.id ? (
+													<div className="rounded-lg bg-amber-50/60 dark:bg-slate-900 border border-amber-200 dark:border-amber-500/20 p-4">
+														<pre className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap break-words font-mono">
+															{article.fullText}
+														</pre>
+													</div>
+												) : (
+													<>
+														{article.summary && (
+															<p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+																{article.summary.replace(/\[HIGH\]/g, '').trim()}
+															</p>
+														)}
+														{article.fullTextEn && (
+															<div className="border-t border-slate-200 dark:border-slate-800 pt-3">
+																<p className="text-xs font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-2">
+																	Full Translation
+																</p>
+																<p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+																	{article.fullTextEn}
+																</p>
+															</div>
+														)}
+													</>
+												)}
+
+												{/* Per-article delete (only if not preserved) */}
+												{!article.isPreserved && isMultiSource && (
+													<div className="pt-1">
+														<button
+															onClick={() => onUnpreserveAndDelete(article.id)}
+															className="text-[11px] text-slate-400 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition-colors flex items-center gap-1"
+														>
+															<IconTrash size={11} />
+															Remove this source from cluster
+														</button>
+													</div>
+												)}
+											</div>
+										</div>
+									))}
+								</div>
+							</div>
+						</>
+					)}
+				</div>
+
+				{/* Drawer footer */}
+				{cluster && (
+					<div className="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={() => onPreserveAll(ids, allPreserved)}
+							className={[
+								'gap-2 text-sm',
+								anyPreserved
+									? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
+									: 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400',
+							].join(' ')}
+						>
+							{anyPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
+							{allPreserved ? 'Preserved — click to unpreserve all' : anyPreserved ? 'Preserve remaining' : 'Preserve all'}
+						</Button>
+
+						{!anyPreserved && (
+							<Button
+								variant="ghost"
+								size="sm"
+								onClick={() => onDeleteAll(ids)}
+								className="gap-2 text-sm text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+							>
+								<IconTrash size={15} />
+								Delete cluster
+							</Button>
+						)}
+					</div>
+				)}
+			</div>
+		</>
+	);
+}
+
+// ─── Article card (preserved view only) ──────────────────────────────────────
 
 interface ArticleCardProps {
 	article: IntelArticle;
@@ -585,13 +951,11 @@ interface ArticleCardProps {
 
 function ArticleCard({ article, showDate, onPreserve, onDelete, onReadFull }: ArticleCardProps) {
 	const isHigh = article.summary?.includes('[HIGH]');
-
 	return (
 		<Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm py-0">
 			<CardHeader className="pt-5 pb-2">
 				<div className="flex items-start justify-between gap-3">
 					<div className="flex-1 min-w-0">
-						{/* Category + source meta row */}
 						{(article.category || article.source || showDate) && (
 							<div className="flex flex-wrap items-center gap-1.5 mb-2">
 								{article.category && (
@@ -599,39 +963,23 @@ function ArticleCard({ article, showDate, onPreserve, onDelete, onReadFull }: Ar
 										{article.category}
 									</span>
 								)}
-								{article.source && (
-									<span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-										{article.source}
-									</span>
-								)}
-								{showDate && (
-									<span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-										· {article.trackingDate}
-									</span>
-								)}
+								{article.source && <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{article.source}</span>}
+								{showDate && <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">· {article.trackingDate}</span>}
 							</div>
 						)}
 						<CardTitle className="font-serif text-xl text-slate-900 dark:text-slate-100 leading-snug">
 							{article.title ?? 'Untitled Article'}
 						</CardTitle>
 					</div>
-					{isHigh && (
-						<Badge variant="destructive" className="shrink-0 text-xs px-2 py-0.5 mt-0.5">
-							HIGH
-						</Badge>
-					)}
+					{isHigh && <Badge variant="destructive" className="shrink-0 text-xs px-2 py-0.5 mt-0.5">HIGH</Badge>}
 				</div>
 			</CardHeader>
-
 			<CardContent className="pt-0 pb-4 space-y-3">
-				{/* AI summary — clamped to 2 lines on mobile, full on sm+ */}
 				{article.summary && (
 					<p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2 sm:line-clamp-none">
 						{article.summary.replace(/\[HIGH\]/g, '').trim()}
 					</p>
 				)}
-
-				{/* Action row — always single horizontal row */}
 				<div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
 					<div className="flex items-center gap-3">
 						<button
@@ -639,51 +987,21 @@ function ArticleCard({ article, showDate, onPreserve, onDelete, onReadFull }: Ar
 							className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors py-1"
 						>
 							<IconArticle size={16} />
-							<span>Read Full Article</span>
+							Read Full Article
 						</button>
 						{safeUrl(article.url) && (
-							<a
-								href={safeUrl(article.url)!}
-								target="_blank"
-								rel="noopener noreferrer"
-								className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors hover:underline underline-offset-2"
-							>
+							<a href={safeUrl(article.url)!} target="_blank" rel="noopener noreferrer" className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors hover:underline underline-offset-2">
 								<IconExternalLink size={14} />
 								Source
 							</a>
 						)}
 					</div>
-
 					<div className="flex items-center gap-0.5 print:hidden">
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => onPreserve(article.id, article.isPreserved ?? 0)}
-							className={[
-								'h-8 px-2 sm:px-3 text-sm gap-1.5',
-								article.isPreserved
-									? 'text-amber-600 dark:text-amber-400'
-									: 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400',
-							].join(' ')}
-							title={article.isPreserved ? 'Unpreserve' : 'Preserve'}
-						>
+						<Button variant="ghost" size="sm" onClick={() => onPreserve(article.id, article.isPreserved ?? 0)} className={['h-8 px-2 sm:px-3 text-sm gap-1.5', article.isPreserved ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400'].join(' ')} title={article.isPreserved ? 'Unpreserve' : 'Preserve'}>
 							{article.isPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
 							<span className="hidden sm:inline">{article.isPreserved ? 'Preserved' : 'Preserve'}</span>
 						</Button>
-
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => !article.isPreserved && onDelete(article.id)}
-							disabled={!!article.isPreserved}
-							className={[
-								'h-8 px-2 sm:px-3 text-sm gap-1.5',
-								article.isPreserved
-									? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
-									: 'text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400',
-							].join(' ')}
-							title={article.isPreserved ? 'Unpreserve before deleting' : 'Delete'}
-						>
+						<Button variant="ghost" size="sm" onClick={() => !article.isPreserved && onDelete(article.id)} disabled={!!article.isPreserved} className={['h-8 px-2 sm:px-3 text-sm gap-1.5', article.isPreserved ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400'].join(' ')} title={article.isPreserved ? 'Unpreserve before deleting' : 'Delete'}>
 							{article.isPreserved ? <IconLock size={15} /> : <IconTrash size={15} />}
 							<span className="hidden sm:inline">{article.isPreserved ? 'Locked' : 'Delete'}</span>
 						</Button>
@@ -694,141 +1012,81 @@ function ArticleCard({ article, showDate, onPreserve, onDelete, onReadFull }: Ar
 	);
 }
 
-// ─── Right slide-in drawer ────────────────────────────────────────────────────
+// ─── Article drawer (preserved view) ─────────────────────────────────────────
 
-interface DrawerProps {
+interface ArticleDrawerProps {
 	article: IntelArticle | null;
 	onClose: () => void;
 	onPreserve: (id: number, current: number) => void;
-	onDelete: (id: number) => void;
 	onUnpreserveAndDelete: (id: number) => void;
 }
 
-function ArticleDrawer({ article, onClose, onPreserve, onDelete, onUnpreserveAndDelete }: DrawerProps) {
+function ArticleDrawer({ article, onClose, onPreserve, onUnpreserveAndDelete }: ArticleDrawerProps) {
 	const [showChinese, setShowChinese] = useState(false);
 	const open = article !== null;
-
 	useEffect(() => { setShowChinese(false); }, [article?.id]);
 
 	return (
 		<>
-			{/* Backdrop */}
-			<div
-				onClick={onClose}
-				className={[
-					'fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity duration-300',
-					open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
-				].join(' ')}
-			/>
-
-			{/* Panel */}
-			<div
-				className={[
-					'fixed top-0 right-0 z-50 h-full w-full sm:w-[48%] sm:min-w-[440px] bg-white dark:bg-slate-900 shadow-2xl flex flex-col transition-transform duration-300 ease-in-out',
-					open ? 'translate-x-0' : 'translate-x-full',
-				].join(' ')}
-			>
-				{/* Drawer header */}
+			<div onClick={onClose} className={['fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity duration-300', open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'].join(' ')} />
+			<div className={['fixed top-0 right-0 z-50 h-full w-full sm:w-[48%] sm:min-w-[440px] bg-white dark:bg-slate-900 shadow-2xl flex flex-col transition-transform duration-300 ease-in-out', open ? 'translate-x-0' : 'translate-x-full'].join(' ')}>
 				<div className="flex items-center justify-between px-5 sm:px-7 py-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
 					<div>
 						<div className="flex items-center gap-2 mb-0.5">
-							<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500">
-								Full Article
-							</p>
-							{article?.category && (
-								<span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full ${categoryStyle(article.category)}`}>
-									{article.category}
-								</span>
-							)}
+							<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500">Full Article</p>
+							{article?.category && <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full ${categoryStyle(article.category)}`}>{article.category}</span>}
 						</div>
-						<p className="text-sm text-slate-500 dark:text-slate-400">
-							{article?.source ? `${article.source} · ` : ''}English analysis + translation
-						</p>
+						<p className="text-sm text-slate-500 dark:text-slate-400">{article?.source ? `${article.source} · ` : ''}English analysis + translation</p>
 					</div>
 					<div className="flex items-center gap-2">
 						{article?.fullText && (
 							<button
-								onClick={() => setShowChinese((v) => !v)}
-								className={[
-									'inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors',
-									showChinese
-										? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/40 text-amber-700 dark:text-amber-400'
-										: 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 hover:text-slate-800 dark:hover:text-slate-200',
-								].join(' ')}
+								onClick={() => setShowChinese(v => !v)}
+								className={['inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors', showChinese ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/40 text-amber-700 dark:text-amber-400' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'].join(' ')}
 							>
 								<IconLanguage size={13} />
 								{showChinese ? 'Show English' : '中文 Source'}
 							</button>
 						)}
-						<button
-							onClick={onClose}
-							className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-							aria-label="Close"
-						>
+						<button onClick={onClose} className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Close">
 							<IconX size={18} />
 						</button>
 					</div>
 				</div>
 
-				{/* Drawer body */}
 				<div className="flex-1 overflow-y-auto px-5 sm:px-7 py-7 space-y-7">
 					{article && (
 						<>
 							<div className="space-y-2">
-								<h2 className="font-serif text-2xl text-slate-900 dark:text-slate-100 leading-snug">
-									{article.title}
-								</h2>
+								<h2 className="font-serif text-2xl text-slate-900 dark:text-slate-100 leading-snug">{article.title}</h2>
 								{safeUrl(article.url) && (
-									<a
-										href={safeUrl(article.url)!}
-										target="_blank"
-										rel="noopener noreferrer"
-										className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline underline-offset-2 break-all"
-									>
+									<a href={safeUrl(article.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline underline-offset-2 break-all">
 										<IconExternalLink size={14} className="shrink-0" />
 										{article.url}
 									</a>
 								)}
 							</div>
-
 							{showChinese ? (
 								<div>
-									<p className="text-xs font-bold tracking-widest uppercase text-amber-600 dark:text-amber-500 mb-4">
-										Source Text (Chinese)
-									</p>
+									<p className="text-xs font-bold tracking-widest uppercase text-amber-600 dark:text-amber-500 mb-4">Source Text (Chinese)</p>
 									<div className="rounded-xl bg-amber-50/60 dark:bg-slate-950 border border-amber-200 dark:border-amber-500/20 p-5">
-										<pre className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap break-words font-mono">
-											{article.fullText}
-										</pre>
+										<pre className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap break-words font-mono">{article.fullText}</pre>
 									</div>
 								</div>
 							) : (
 								<>
 									<div>
-										<p className="text-xs font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-3">
-											Geopolitical Summary
-										</p>
-										<p className="text-base text-slate-700 dark:text-slate-200 leading-relaxed">
-											{article.summary?.replace(/\[HIGH\]/g, '').trim() ?? 'No summary available.'}
-										</p>
+										<p className="text-xs font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-3">Geopolitical Summary</p>
+										<p className="text-base text-slate-700 dark:text-slate-200 leading-relaxed">{article.summary?.replace(/\[HIGH\]/g, '').trim() ?? 'No summary available.'}</p>
 									</div>
-
 									{article.fullTextEn ? (
 										<div>
-											<p className="text-xs font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-3">
-												Full Article (English Translation)
-											</p>
-											<div className="prose prose-slate dark:prose-invert max-w-none
-												prose-p:text-slate-700 dark:prose-p:text-slate-300 prose-p:leading-7 prose-p:text-base">
-												<p>{article.fullTextEn}</p>
-											</div>
+											<p className="text-xs font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-3">Full Article (English Translation)</p>
+											<p className="text-base text-slate-700 dark:text-slate-300 leading-relaxed">{article.fullTextEn}</p>
 										</div>
 									) : (
 										<div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950 px-5 py-4">
-											<p className="text-sm text-slate-500 dark:text-slate-400">
-												Full English translation not available for this article.
-												Toggle to <strong>中文 Source</strong> to read the original.
-											</p>
+											<p className="text-sm text-slate-500 dark:text-slate-400">Full English translation not available. Toggle to <strong>中文 Source</strong> to read the original.</p>
 										</div>
 									)}
 								</>
@@ -837,48 +1095,16 @@ function ArticleDrawer({ article, onClose, onPreserve, onDelete, onUnpreserveAnd
 					)}
 				</div>
 
-				{/* Drawer footer */}
 				{article && (
 					<div className="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => onPreserve(article.id, article.isPreserved ?? 0)}
-							className={[
-								'gap-2 text-sm',
-								article.isPreserved
-									? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
-									: 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400',
-							].join(' ')}
-						>
+						<Button variant="ghost" size="sm" onClick={() => onPreserve(article.id, article.isPreserved ?? 0)} className={['gap-2 text-sm', article.isPreserved ? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300' : 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400'].join(' ')}>
 							{article.isPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
 							{article.isPreserved ? 'Preserved — click to unpreserve' : 'Preserve'}
 						</Button>
-
-						<div className="flex items-center gap-2">
-							{article.isPreserved ? (
-								<Button
-									variant="ghost"
-									size="sm"
-									onClick={() => onUnpreserveAndDelete(article.id)}
-									className="gap-2 text-sm text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
-									title="Remove preservation and permanently delete"
-								>
-									<IconTrash size={15} />
-									Unpreserve &amp; Delete
-								</Button>
-							) : (
-								<Button
-									variant="ghost"
-									size="sm"
-									onClick={() => onDelete(article.id)}
-									className="gap-2 text-sm text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
-								>
-									<IconTrash size={15} />
-									Delete
-								</Button>
-							)}
-						</div>
+						<Button variant="ghost" size="sm" onClick={() => onUnpreserveAndDelete(article.id)} className="gap-2 text-sm text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400">
+							<IconTrash size={15} />
+							{article.isPreserved ? 'Unpreserve & Delete' : 'Delete'}
+						</Button>
 					</div>
 				)}
 			</div>

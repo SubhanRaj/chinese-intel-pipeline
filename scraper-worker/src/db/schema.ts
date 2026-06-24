@@ -20,6 +20,17 @@ export const intelArticles = sqliteTable('intel_articles', {
 	category: text('category'),
 	source: text('source'),
 	isPreserved: integer('is_preserved').default(0),
+	clusterId: integer('cluster_id'),
+	createdAt: text('created_at').default(sql`(datetime('now'))`),
+});
+
+export const intelClusters = sqliteTable('intel_clusters', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	trackingDate: text('tracking_date').notNull(),
+	title: text('title'),
+	summary: text('summary'),
+	category: text('category'),
+	sources: text('sources'), // JSON array of source names e.g. '["Guangxi Daily","Hainan Daily"]'
 	createdAt: text('created_at').default(sql`(datetime('now'))`),
 });
 
@@ -40,5 +51,7 @@ export type IntelBriefing = typeof intelBriefings.$inferSelect;
 export type NewIntelBriefing = typeof intelBriefings.$inferInsert;
 export type IntelArticle = typeof intelArticles.$inferSelect;
 export type NewIntelArticle = typeof intelArticles.$inferInsert;
+export type IntelCluster = typeof intelClusters.$inferSelect;
+export type NewIntelCluster = typeof intelClusters.$inferInsert;
 export type TempArticle = typeof tempArticles.$inferSelect;
 export type NewTempArticle = typeof tempArticles.$inferInsert;
