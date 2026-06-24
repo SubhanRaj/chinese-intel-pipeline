@@ -74,7 +74,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 
 	const [selectedId, setSelectedId] = useState<number | null>(defaultBriefingId);
 	const [dark, setDark] = useState(false);
-	const [sidebarOpen, setSidebarOpen] = useState(true);
+	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [drawer, setDrawer] = useState<DrawerState | null>(null);
 	const [preservedDrawer, setPreservedDrawer] = useState<IntelArticle | null>(null);
 	const [view, setView] = useState<View>('briefing');
@@ -102,6 +102,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 
 			const savedSidebar = localStorage.getItem('intel-sidebar');
 			if (savedSidebar !== null) setSidebarOpen(savedSidebar === '1');
+			else setSidebarOpen(window.innerWidth >= 768); // default: open on desktop, closed on mobile
 		} catch { /* storage unavailable */ }
 		setHydrated(true);
 	}, []);
