@@ -44,6 +44,7 @@ export const tempArticles = sqliteTable('temp_articles', {
 	source: text('source').notNull(),
 	isImportant: integer('is_important').default(0),
 	importanceReason: text('importance_reason'),
+	clusterId: integer('cluster_id'),
 	createdAt: text('created_at').default(sql`(datetime('now'))`),
 });
 
