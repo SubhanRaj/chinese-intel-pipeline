@@ -359,11 +359,11 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 | **Today's Feed** | All scraped articles grouped by source, ✓/— badges with AI reasoning for each filter decision; important articles show "View Full Analysis" button opening the cluster drawer directly |
 | **Preserve / Delete** | Cluster-level (all articles in cluster) with per-article override in drawer; preserved articles exempt from cleanup |
 | **Archive** | Dedicated view of all preserved articles across all dates |
-| **Sidebar search** | Filters sidebar entries (Preserved, Today's Feed, Briefings) by title or date in real time; clicking a result carries the query into the main search view |
-| **Global search view** | Typing in the search bar (or activating via sidebar) opens a dedicated results page showing matching clusters across **all briefing dates** — not just the selected one; clearing the query returns to the previous view |
+| **Search** | Two search bars (sidebar bottom + briefing header) share identical behaviour: typing filters the sidebar nav live for quick orientation; pressing **Enter** or clicking **Search** commits the query and opens a dedicated results page showing all matching clusters across **all dates**, grouped by date (newest first); supports title, summary, source, and **category tag** matching (e.g. search `military`, `political`); clearing returns to the previous view |
 | **Print Briefing** | `window.print()` with sidebar hidden |
-| **Dark / light mode** | Toggle in sidebar header; high-contrast light mode with WCAG AA compliant text colours; preference persists via `localStorage` across sessions |
-| **State persistence** | Active view (Feed / Briefing / Preserved), selected briefing date, and sidebar open state restored on refresh via `sessionStorage` |
+| **Dark / light mode** | Toggle in sidebar header; preference persists via `localStorage` across sessions |
+| **State persistence** | Active view, selected briefing date persist via `sessionStorage`; sidebar open/collapsed state and dark mode persist via `localStorage` |
+| **Collapsible sidebar** | Collapses on both mobile and desktop via the `←` button; defaults to open on desktop, closed on mobile; state saved in `localStorage` |
 | **PWA** | Installable via `manifest.json`; theme matches red brand accent |
 | **Mobile responsive** | Sidebar collapses with hamburger; drawer goes full-width; touch-friendly tap targets |
 | **Backward-compat** | Old articles without `cluster_id` are wrapped as virtual single-item clusters so legacy briefings render correctly |
