@@ -67,17 +67,33 @@ async function fetchHtml(url: string, referer?: string): Promise<string | null> 
 	}
 }
 
-// Extract visible text from a block of HTML using HTMLRewriter
+// Extract clean text from HTML — only semantic content tags, no scripts/styles/nav/attrs
 async function extractText(html: string): Promise<string> {
 	const chunks: string[] = [];
+	let skip = false;
+
 	const res = new Response(html, { headers: { 'Content-Type': 'text/html' } });
 	const transformed = new HTMLRewriter()
-		.on('p, h1, h2, h3, h4, article, .content, .article-content, .news-content', {
-			text(chunk) { if (chunk.text.trim()) chunks.push(chunk.text.trim()); },
+		// Block non-content regions entirely
+		.on('script, style, nav, header, footer, aside, noscript', {
+			element() { skip = true; },
+		})
+		.on('script, style, nav, header, footer, aside, noscript', {
+			// re-enable after the block closes — handled via text guard below
+			element(el) { el.onEndTag(() => { skip = false; }); },
+		})
+		// Only pull text from semantic content tags
+		.on('h1, h2, h3, h4, p', {
+			text(chunk) {
+				const t = chunk.text.trim();
+				if (!skip && t) chunks.push(t);
+			},
 		})
 		.transform(res);
+
 	await transformed.text();
-	return chunks.join('\n').trim();
+	// Collapse whitespace and join paragraphs with newlines
+	return chunks.map(c => c.replace(/\s+/g, ' ')).join('\n').trim();
 }
 
 // -- Guangxi Daily: has a proper epaper API
@@ -306,7 +322,8 @@ async function analyseWithWorkersAI(ai: any, articles: ScrapedArticle[]): Promis
 		],
 	});
 
-	// Workers AI returns { response: string } normally, but { choices: [...] } when max_tokens is set
+	// Workers AI (Llama) returns { response: string } by default.
+	// When max_tokens is set it switches to OpenAI-compat shape { choices: [...] } — same Llama model, different envelope.
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const rawText: string | undefined =
 		typeof response?.response === 'string'
