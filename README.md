@@ -304,6 +304,7 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 | `source` | TEXT | Paper name |
 | `is_important` | INTEGER | 0 = skipped by filter, 1 = sent to Pass 2 |
 | `importance_reason` | TEXT | One-sentence AI explanation for the decision |
+| `cluster_id` | INTEGER | FK → intel_clusters; set after Pass 3 for important articles |
 | `created_at` | TEXT | `datetime('now')` default |
 
 ### `intel_clusters` — one row per story cluster
@@ -353,7 +354,7 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 |---|---|
 | **Cluster cards** | One card per story — synthesised headline, combined summary, multi-source badge, category + HIGH indicators |
 | **Publisher perspectives drawer** | Slide-in panel showing each source's own title, summary, full translation, 中文 source toggle, and per-article preserve |
-| **Today's Feed** | All scraped articles grouped by source, ✓/— badges with AI reasoning for each filter decision |
+| **Today's Feed** | All scraped articles grouped by source, ✓/— badges with AI reasoning for each filter decision; important articles show "View Full Analysis" button opening the cluster drawer directly |
 | **Preserve / Delete** | Cluster-level (all articles in cluster) with per-article override in drawer; preserved articles exempt from cleanup |
 | **Archive** | Dedicated view of all preserved articles across all dates |
 | **Search** | Live client-side filter across title, summary, source |
@@ -388,7 +389,8 @@ chinese-intel-pipeline/
 │   │   ├── 0002_add_full_text_en.sql
 │   │   ├── 0003_add_category_source.sql
 │   │   ├── 0004_add_temp_articles.sql
-│   │   └── 0005_add_clusters.sql
+│   │   ├── 0005_add_clusters.sql
+│   │   └── 0006_temp_articles_cluster_id.sql
 │   ├── src/
 │   │   ├── index.ts                     # All pipeline logic
 │   │   │   ├── fetchHtml()              fetch wrapper with UA + Referer
