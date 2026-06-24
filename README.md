@@ -359,7 +359,8 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 | **Archive** | Dedicated view of all preserved articles across all dates |
 | **Search** | Live client-side filter across title, summary, source |
 | **Print Briefing** | `window.print()` with sidebar hidden |
-| **Dark / light mode** | Toggle in sidebar header; high-contrast light mode with WCAG AA compliant text colours |
+| **Dark / light mode** | Toggle in sidebar header; high-contrast light mode with WCAG AA compliant text colours; preference persists via `localStorage` across sessions |
+| **State persistence** | Active view (Feed / Briefing / Preserved), selected briefing date, and sidebar open state restored on refresh via `sessionStorage` |
 | **PWA** | Installable via `manifest.json`; theme matches red brand accent |
 | **Mobile responsive** | Sidebar collapses with hamburger; drawer goes full-width; touch-friendly tap targets |
 | **Backward-compat** | Old articles without `cluster_id` are wrapped as virtual single-item clusters so legacy briefings render correctly |
