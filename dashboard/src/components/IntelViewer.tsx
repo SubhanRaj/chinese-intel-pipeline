@@ -69,9 +69,9 @@ interface DrawerState {
 }
 
 export default function IntelViewer({ briefings, articles, clusters, feed }: Props) {
-	const [selectedId, setSelectedId] = useState<number | null>(
-		briefings.length > 0 ? briefings[0].id : null,
-	);
+	const defaultBriefingId = briefings.length > 0 ? briefings[0].id : null;
+
+	const [selectedId, setSelectedId] = useState<number | null>(defaultBriefingId);
 	const [dark, setDark] = useState(false);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [drawer, setDrawer] = useState<DrawerState | null>(null);
@@ -79,10 +79,58 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 	const [view, setView] = useState<View>('briefing');
 	const [searchQuery, setSearchQuery] = useState('');
 	const [, startTransition] = useTransition();
+	const [hydrated, setHydrated] = useState(false);
 
+	// Restore persisted state once on mount (after hydration)
 	useEffect(() => {
+		try {
+			const savedDark = localStorage.getItem('intel-dark');
+			if (savedDark !== null) setDark(savedDark === '1');
+
+			const savedView = sessionStorage.getItem('intel-view') as View | null;
+			if (savedView && ['briefing', 'preserved', 'feed'].includes(savedView)) setView(savedView);
+
+			const savedId = sessionStorage.getItem('intel-selected-id');
+			if (savedId) {
+				const id = Number(savedId);
+				if (briefings.some(b => b.id === id)) setSelectedId(id);
+			}
+
+			const savedSidebar = sessionStorage.getItem('intel-sidebar');
+			if (savedSidebar !== null) setSidebarOpen(savedSidebar === '1');
+		} catch { /* storage unavailable */ }
+		setHydrated(true);
+	}, []);
+
+	// Persist dark mode across sessions
+	useEffect(() => {
+		if (!hydrated) return;
 		document.documentElement.classList.toggle('dark', dark);
-	}, [dark]);
+		try { localStorage.setItem('intel-dark', dark ? '1' : '0'); } catch { /* */ }
+	}, [dark, hydrated]);
+
+	// Apply dark class immediately on first render before hydration completes
+	useEffect(() => {
+		try {
+			const savedDark = localStorage.getItem('intel-dark');
+			if (savedDark === '1') document.documentElement.classList.add('dark');
+		} catch { /* */ }
+	}, []);
+
+	const persistView = (v: View) => {
+		setView(v);
+		try { sessionStorage.setItem('intel-view', v); } catch { /* */ }
+	};
+
+	const persistSelectedId = (id: number | null) => {
+		setSelectedId(id);
+		try { if (id !== null) sessionStorage.setItem('intel-selected-id', String(id)); } catch { /* */ }
+	};
+
+	const persistSidebar = (open: boolean) => {
+		setSidebarOpen(open);
+		try { sessionStorage.setItem('intel-sidebar', open ? '1' : '0'); } catch { /* */ }
+	};
 
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
@@ -159,7 +207,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 	const sidebar = (
 		<>
 			<div
-				onClick={() => setSidebarOpen(false)}
+				onClick={() => persistSidebar(false)}
 				className={[
 					'fixed inset-0 z-20 bg-black/40 md:hidden transition-opacity duration-300',
 					sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
@@ -188,7 +236,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 							{dark ? <IconSun size={18} /> : <IconMoon size={18} />}
 						</button>
 						<button
-							onClick={() => setSidebarOpen(false)}
+							onClick={() => persistSidebar(false)}
 							className="mt-1 p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors md:hidden"
 							aria-label="Close sidebar"
 						>
@@ -202,7 +250,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 					{preservedArticles.length > 0 && (
 						<div>
 							<button
-								onClick={() => { setView('preserved'); setSearchQuery(''); setSidebarOpen(false); }}
+								onClick={() => { persistView('preserved'); setSearchQuery(''); persistSidebar(false); }}
 								className={[
 									'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors',
 									view === 'preserved'
@@ -219,7 +267,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 							{preservedArticles.map(a => (
 								<button
 									key={a.id}
-									onClick={() => { setPreservedDrawer(a); setSidebarOpen(false); }}
+									onClick={() => { setPreservedDrawer(a); persistSidebar(false); }}
 									className="w-full text-left rounded-lg px-3 py-2 mb-0.5 flex items-start gap-2.5 transition-all duration-100 text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 group"
 								>
 									<IconBookmark size={13} className="shrink-0 mt-0.5 text-amber-500" />
@@ -238,7 +286,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 					{todayFeed.length > 0 && (
 						<div>
 							<button
-								onClick={() => { setView('feed'); setSearchQuery(''); setSidebarOpen(false); }}
+								onClick={() => { persistView('feed'); setSearchQuery(''); persistSidebar(false); }}
 								className={[
 									'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors',
 									view === 'feed'
@@ -273,7 +321,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 								return (
 									<button
 										key={b.id}
-										onClick={() => { setSelectedId(b.id); setView('briefing'); setDrawer(null); setSearchQuery(''); setSidebarOpen(false); }}
+										onClick={() => { persistSelectedId(b.id); persistView('briefing'); setDrawer(null); setSearchQuery(''); persistSidebar(false); }}
 										className={[
 											'w-full text-left rounded-lg px-3 py-2.5 mb-0.5 flex items-center gap-3 transition-all duration-100',
 											isActive
@@ -304,7 +352,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 	const mobileTopBar = (
 		<div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0">
 			<button
-				onClick={() => setSidebarOpen(true)}
+				onClick={() => persistSidebar(true)}
 				className="p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
 				aria-label="Open sidebar"
 			>
@@ -454,14 +502,15 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 									</div>
 									<div className="space-y-2">
 										{arts.map(a => {
-											// FK lookup → URL match → title match (handles minor URL differences between runs)
+											// FK first; fallback finds the intel_article row that actually has cluster_id set
+											// (multiple runs create duplicate rows — we want the one with cluster_id, not just first)
 											const matchedCluster = a.isImportant
 												? (a.clusterId
 													? clusters.find(c => c.id === a.clusterId)
 													: (() => {
-														const art = articles.find(x => x.url === a.url)
-															?? articles.find(x => a.titleEn && x.title === a.titleEn)
-															?? articles.find(x => a.title && x.title === a.title);
+														const art = articles.find(x => x.url === a.url && x.clusterId)
+															?? articles.find(x => a.titleEn && x.title === a.titleEn && x.clusterId)
+															?? articles.find(x => a.title && x.title === a.title && x.clusterId);
 														return art?.clusterId ? clusters.find(c => c.id === art.clusterId) : undefined;
 													})())
 												: undefined;
