@@ -23,7 +23,22 @@ export const intelArticles = sqliteTable('intel_articles', {
 	createdAt: text('created_at').default(sql`(datetime('now'))`),
 });
 
+export const tempArticles = sqliteTable('temp_articles', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	trackingDate: text('tracking_date').notNull(),
+	title: text('title').notNull(),
+	titleEn: text('title_en'),
+	fullText: text('full_text'),
+	url: text('url').notNull(),
+	source: text('source').notNull(),
+	isImportant: integer('is_important').default(0),
+	importanceReason: text('importance_reason'),
+	createdAt: text('created_at').default(sql`(datetime('now'))`),
+});
+
 export type IntelBriefing = typeof intelBriefings.$inferSelect;
 export type NewIntelBriefing = typeof intelBriefings.$inferInsert;
 export type IntelArticle = typeof intelArticles.$inferSelect;
 export type NewIntelArticle = typeof intelArticles.$inferInsert;
+export type TempArticle = typeof tempArticles.$inferSelect;
+export type NewTempArticle = typeof tempArticles.$inferInsert;

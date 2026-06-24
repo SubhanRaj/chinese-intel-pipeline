@@ -1,7 +1,7 @@
 import puppeteer from '@cloudflare/puppeteer';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, sql as drizzleSql } from 'drizzle-orm';
-import { intelBriefings, intelArticles } from './db/schema';
+import { intelBriefings, intelArticles, tempArticles } from './db/schema';
 
 export interface Env {
 	DB: D1Database;
@@ -281,9 +281,115 @@ async function scrapeUrl(browser: Browser, startUrl: string, sourceName: string)
 	return articles;
 }
 
-// ---------- AI analysis ----------
+// ---------- AI ----------
 
-const SYSTEM_PROMPT = `You are an intelligence analyst processing Chinese provincial newspaper articles.
+// Shared helper: extract the text content from any Workers AI response shape.
+// Default shape (no max_tokens): { response: string }
+// With max_tokens:               { choices: [{ message: { content: string } }] }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractAiText(response: any): string | undefined {
+	if (typeof response?.response === 'string') return response.response as string;
+	return response?.choices?.[0]?.message?.content as string | undefined;
+}
+
+// Shared helper: find the best JSON array in a raw AI text string.
+function extractJsonArray(rawText: string): unknown[] | null {
+	const greedyMatch = rawText.match(/\[[\s\S]*\]/);
+	const allMatches = [...rawText.matchAll(/\[[\s\S]*?\]/g)];
+	const candidates = greedyMatch
+		? [greedyMatch[0], ...allMatches.map(m => m[0])]
+		: allMatches.map(m => m[0]);
+
+	for (const candidate of candidates) {
+		try {
+			const parsed = JSON.parse(candidate);
+			if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+		} catch { /* try next */ }
+	}
+	return null;
+}
+
+// ── Pass 1: filter ────────────────────────────────────────────────────────────
+// Send all article titles to AI. It evaluates each for geopolitical significance
+// and returns a decision + reason for every article. This uses very few tokens
+// (titles only, English output) so the filter pass is cheap on the free tier.
+
+const FILTER_PROMPT = `You are a geopolitical intelligence analyst. You will receive a JSON array of Chinese newspaper article titles (index + title pairs).
+
+Your task: evaluate every article for significance to international intelligence, foreign policy, and strategic monitoring.
+
+Mark important: true for articles about:
+- Military movements, exercises, procurement, or doctrine
+- Senior leadership decisions, speeches, or personnel changes
+- Foreign policy, diplomacy, or cross-border events
+- Economic policy with international implications
+- Technology programs with strategic or dual-use potential
+- Significant social unrest, disasters, or events with political impact
+
+Mark important: false for:
+- Purely local infrastructure (roads, parks, municipal works)
+- Sports, entertainment, cultural festivals
+- Routine agriculture, weather, community services
+- Advertising copy, editorial credits, routine notices
+
+Return ONLY a valid JSON array — no markdown, no code fences, no explanation:
+[
+  {
+    "index": 0,
+    "title_en": "accurate English translation of the Chinese title",
+    "important": true,
+    "reason": "One sentence explaining why included or excluded"
+  }
+]
+
+Every input article must appear in the output array. Your output must be parseable by JSON.parse().`;
+
+interface FilterDecision {
+	index: number;
+	title_en: string;
+	important: boolean;
+	reason: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function filterArticlesWithAI(ai: any, articles: ScrapedArticle[]): Promise<FilterDecision[]> {
+	const input = JSON.stringify(
+		articles.map((a, i) => ({ index: i, title: a.title })),
+	).slice(0, 3_000); // titles only — ~6k tokens input, ~2k tokens output → very cheap
+
+	const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+		max_tokens: 2048,
+		messages: [
+			{ role: 'system', content: FILTER_PROMPT },
+			{ role: 'user', content: input },
+		],
+	});
+
+	const rawText = extractAiText(response);
+	if (!rawText) throw new Error(`Filter AI bad response shape: ${JSON.stringify(response).slice(0, 200)}`);
+
+	const parsed = extractJsonArray(rawText);
+	if (parsed && parsed.length > 0 && 'important' in (parsed[0] as object)) {
+		const decisions = parsed as FilterDecision[];
+		const importantCount = decisions.filter(d => d.important).length;
+		console.log(`[FILTER AI] ${importantCount}/${decisions.length} articles marked important`);
+		return decisions;
+	}
+
+	// Fallback: treat all as important so no data is lost
+	console.warn('[FILTER AI] Could not parse filter response — treating all articles as important');
+	return articles.map((a, i) => ({
+		index: i,
+		title_en: a.title,
+		important: true,
+		reason: 'Filter AI unavailable — included by default',
+	}));
+}
+
+// ── Pass 2: deep analysis ─────────────────────────────────────────────────────
+// Runs only on the important subset. Full translation + summary + category.
+
+const ANALYSIS_PROMPT = `You are an intelligence analyst processing Chinese provincial newspaper articles.
 You will receive a JSON array of article objects, each with "title" (Chinese), "full_text" (Chinese), and "url".
 
 Return ONLY a valid JSON array — no markdown, no code fences, no explanation. Each element must have:
@@ -306,54 +412,35 @@ interface AiArticle {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function analyseWithWorkersAI(ai: any, articles: ScrapedArticle[]): Promise<AiArticle[]> {
 	const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
-		max_tokens: 4096, // default is 256 — not enough for a JSON array of 30+ articles
+		max_tokens: 4096, // default 256 truncates JSON arrays — must be set explicitly
 		messages: [
-			{ role: 'system', content: SYSTEM_PROMPT },
+			{ role: 'system', content: ANALYSIS_PROMPT },
 			{
 				role: 'user',
 				content: JSON.stringify(
 					articles.map((a) => ({
 						title: a.title,
-						full_text: a.full_text.slice(0, 300), // Chinese ~2 tok/char; 300 chars ≈ 600 tokens
+						full_text: a.full_text.slice(0, 400), // Chinese ~2 tok/char; fewer articles so we can give more per article
 						url: a.url,
 					})),
-				).slice(0, 6_000), // ~12k tokens; system prompt ~500tok, output ~4k → fits in 24k ctx
+				).slice(0, 6_000), // ~12k tokens; system ~500 + output ~4k → fits in 24k ctx
 			},
 		],
 	});
 
-	// Workers AI (Llama) returns { response: string } by default.
-	// When max_tokens is set it switches to OpenAI-compat shape { choices: [...] } — same Llama model, different envelope.
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const rawText: string | undefined =
-		typeof response?.response === 'string'
-			? (response.response as string)
-			: (response?.choices?.[0]?.message?.content as string | undefined);
+	// Workers AI (Llama): { response: string } by default; { choices:[...] } when max_tokens is set
+	const rawText = extractAiText(response);
+	if (!rawText) throw new Error(`Analysis AI bad response shape: ${JSON.stringify(response).slice(0, 200)}`);
 
-	if (!rawText) {
-		throw new Error(`Unexpected Workers AI response shape: ${JSON.stringify(response).slice(0, 200)}`);
+	const parsed = extractJsonArray(rawText);
+	if (parsed && parsed.length > 0 && 'title' in (parsed[0] as object)) {
+		const results = parsed as AiArticle[];
+		console.log(`[ANALYSIS AI] ${results.length} articles, first: ${results[0].title}`);
+		return results;
 	}
 
-	// Extract all [...] JSON arrays from the response and try each from last to first.
-	// The model sometimes echoes the input array before its output, so we prefer the last match.
-	const allMatches = [...rawText.matchAll(/\[[\s\S]*?\]/g)];
-	// Also try a greedy match for the largest array span
-	const greedyMatch = rawText.match(/\[[\s\S]*\]/);
-	const candidates = greedyMatch ? [greedyMatch[0], ...allMatches.map(m => m[0])] : allMatches.map(m => m[0]);
-
-	for (const candidate of candidates) {
-		try {
-			const parsed = JSON.parse(candidate);
-			if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].title) {
-				console.log('[AI PARSED]', parsed.length, 'articles, first title:', parsed[0].title);
-				return parsed as AiArticle[];
-			}
-		} catch { /* try next */ }
-	}
-
-	// Hard fallback: one article per scraped item with raw title, no summary
-	console.log('[AI FALLBACK] Could not parse JSON array from response');
-	return articles.map((a) => ({ title: a.title, summary: 'Analysis unavailable.', full_text_en: '', url: a.url, category: 'Uncategorized' }));
+	console.warn('[ANALYSIS AI] Could not parse JSON array — using fallback');
+	return articles.map(a => ({ title: a.title, summary: 'Analysis unavailable.', full_text_en: '', url: a.url, category: 'Uncategorized' }));
 }
 
 // ---------- email ----------
@@ -416,42 +503,58 @@ async function sendEmail(
 
 // ---------- shared pipeline ----------
 
-async function runPipeline(env: Env): Promise<string> {
+interface PipelineOptions {
+	fetchOnly?: boolean; // skip Puppeteer entirely — safe for testing, no Browser Rendering quota
+	force?: boolean;     // bypass idempotency check — re-run even if today already processed
+}
+
+async function runPipeline(env: Env, opts: PipelineOptions = {}): Promise<string> {
+	const { fetchOnly = false, force = false } = opts;
 	const { yyyy, mm, dd } = getCSTDateParts();
 	const trackingDate = `${yyyy}-${mm}-${dd}`;
 	const db = drizzle(env.DB);
 
-	// Idempotency check
-	const existing = await db
-		.select()
-		.from(intelBriefings)
-		.where(eq(intelBriefings.trackingDate, trackingDate))
-		.limit(1);
+	// Idempotency check (skipped when force=true)
+	if (!force) {
+		const existing = await db
+			.select()
+			.from(intelBriefings)
+			.where(eq(intelBriefings.trackingDate, trackingDate))
+			.limit(1);
 
-	if (existing.length > 0 && existing[0].aiAnalysisMarkdown) {
-		const msg = `Already processed ${trackingDate}, skipping.`;
-		console.log(msg);
-		return msg;
+		if (existing.length > 0 && existing[0].aiAnalysisMarkdown) {
+			const msg = `Already processed ${trackingDate}, skipping. Pass ?force=1 to re-run.`;
+			console.log(msg);
+			return msg;
+		}
 	}
 
 	const sources = buildSources(yyyy, mm, dd);
 	let scrapedArticles: ScrapedArticle[] = [];
 	let scrapeMode = 'puppeteer';
 
-	try {
-		console.log('Attempting Puppeteer (Cloudflare Browser Rendering) scrape…');
-		const browser = await puppeteer.launch(env.BROWSER);
-		for (const { url, name } of sources) {
-			const arts = await scrapeUrl(browser, url, name);
-			scrapedArticles.push(...arts);
-		}
-		try { await browser.close(); } catch { /* browser may already be closed on crash */ }
-		console.log(`Puppeteer scrape succeeded: ${scrapedArticles.length} articles.`);
-	} catch (puppeteerErr) {
-		console.warn(`Puppeteer failed (${(puppeteerErr as Error).message}). Falling back to fetch+HTMLRewriter…`);
-		scrapeMode = 'fetch-fallback';
+	if (fetchOnly) {
+		// fetch-only mode: skip Puppeteer entirely (safe for testing — no Browser Rendering quota used)
+		console.log('fetch-only mode — skipping Puppeteer, running fetch engine directly…');
+		scrapeMode = 'fetch-only';
 		scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
-		console.log(`Fetch fallback yielded ${scrapedArticles.length} articles.`);
+		console.log(`Fetch engine yielded ${scrapedArticles.length} articles.`);
+	} else {
+		try {
+			console.log('Attempting Puppeteer (Cloudflare Browser Rendering) scrape…');
+			const browser = await puppeteer.launch(env.BROWSER);
+			for (const { url, name } of sources) {
+				const arts = await scrapeUrl(browser, url, name);
+				scrapedArticles.push(...arts);
+			}
+			try { await browser.close(); } catch { /* browser may already be closed on crash */ }
+			console.log(`Puppeteer scrape succeeded: ${scrapedArticles.length} articles.`);
+		} catch (puppeteerErr) {
+			console.warn(`Puppeteer failed (${(puppeteerErr as Error).message}). Falling back to fetch+HTMLRewriter…`);
+			scrapeMode = 'fetch-fallback';
+			scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
+			console.log(`Fetch fallback yielded ${scrapedArticles.length} articles.`);
+		}
 	}
 
 	if (scrapedArticles.length === 0) {
@@ -462,17 +565,43 @@ async function runPipeline(env: Env): Promise<string> {
 
 	console.log(`Scrape mode: ${scrapeMode} — ${scrapedArticles.length} total articles.`);
 
-	console.log(`Scraped ${scrapedArticles.length} articles. Sending to Workers AI for analysis…`);
+	// ── Step 1: Delete previous day's temp articles (they've had their 24h) ──
+	await env.DB.prepare(`DELETE FROM temp_articles WHERE tracking_date != ?`).bind(trackingDate).run();
 
-	const aiArticles = await analyseWithWorkersAI(env.AI, scrapedArticles);
+	// ── Step 2: Pass 1 — filter all articles by title, get importance decisions ──
+	console.log(`Pass 1: filtering ${scrapedArticles.length} articles by title…`);
+	const filterDecisions = await filterArticlesWithAI(env.AI, scrapedArticles);
 
-	// Build a combined raw text for the briefing record
+	// ── Step 3: Store ALL articles in temp_articles (visible in Today's Feed, 24h lifespan) ──
+	for (let i = 0; i < scrapedArticles.length; i++) {
+		const scraped = scrapedArticles[i];
+		const decision = filterDecisions.find(d => d.index === i);
+		await db.insert(tempArticles).values({
+			trackingDate,
+			title: scraped.title,
+			titleEn: decision?.title_en ?? scraped.title,
+			fullText: scraped.full_text,
+			url: scraped.url,
+			source: scraped.source,
+			isImportant: decision?.important ? 1 : 0,
+			importanceReason: decision?.reason ?? null,
+		});
+	}
+	console.log(`Stored ${scrapedArticles.length} articles in temp_articles.`);
+
+	// ── Step 4: Pass 2 — deep analysis on the important subset only ──
+	const importantScraped = scrapedArticles.filter((_, i) => {
+		const d = filterDecisions.find(fd => fd.index === i);
+		return d ? d.important : true;
+	});
+	console.log(`Pass 2: deep analysis on ${importantScraped.length} important articles…`);
+	const aiArticles = await analyseWithWorkersAI(env.AI, importantScraped);
+
+	// ── Step 5: Upsert briefing parent record ──
 	const rawScrapedText = scrapedArticles
-		.map((a) => `[${a.url}]\n${a.title}\n${a.full_text}`)
+		.map(a => `[${a.url}]\n${a.title}\n${a.full_text}`)
 		.join('\n\n---\n\n');
 
-	// Upsert the daily briefing parent record
-	// aiAnalysisMarkdown stores "done" sentinel so idempotency check fires on re-run
 	await db
 		.insert(intelBriefings)
 		.values({ trackingDate, rawScrapedText, aiAnalysisMarkdown: 'articles', emailStatus: 0 })
@@ -481,10 +610,10 @@ async function runPipeline(env: Env): Promise<string> {
 			set: { rawScrapedText, aiAnalysisMarkdown: 'articles', emailStatus: 0 },
 		});
 
-	// Insert individual articles
+	// ── Step 6: Insert analyzed (important) articles into intel_articles ──
 	for (let i = 0; i < aiArticles.length; i++) {
 		const ai = aiArticles[i];
-		const scraped = scrapedArticles[i];
+		const scraped = importantScraped[i];
 		await db.insert(intelArticles).values({
 			trackingDate,
 			title: ai.title ?? scraped?.title,
@@ -498,7 +627,7 @@ async function runPipeline(env: Env): Promise<string> {
 		});
 	}
 
-	console.log(`Saved ${aiArticles.length} articles to D1.`);
+	console.log(`Saved ${aiArticles.length} important articles to intel_articles.`);
 
 	// 30-day cleanup of unpreserved articles
 	await env.DB.prepare(
@@ -533,9 +662,12 @@ async function runPipeline(env: Env): Promise<string> {
 // ---------- handlers ----------
 
 export default {
-	async fetch(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+	async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
 		try {
-			const result = await runPipeline(env);
+			const url = new URL(request.url);
+			const fetchOnly = url.searchParams.get('fetch-only') === '1';
+			const force = url.searchParams.get('force') === '1';
+			const result = await runPipeline(env, { fetchOnly, force });
 			return new Response(result, { status: 200 });
 		} catch (error) {
 			return new Response(`Pipeline error: ${(error as Error).message}`, { status: 500 });

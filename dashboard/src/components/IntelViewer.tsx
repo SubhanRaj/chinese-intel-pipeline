@@ -21,13 +21,16 @@ import {
 	IconMenu2,
 	IconSearch,
 	IconArchive,
+	IconLayoutGrid,
+	IconCheck,
+	IconMinus,
 } from '@tabler/icons-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { togglePreserve, deleteArticle, unpreserveAndDelete } from '@/app/actions';
 import { safeUrl } from '@/lib/utils';
-import type { IntelBriefing, IntelArticle } from '@/db/schema';
+import type { IntelBriefing, IntelArticle, TempArticle } from '@/db/schema';
 
 const MarkdownRenderer = dynamic(() => import('./MarkdownRenderer'), { ssr: false });
 
@@ -51,11 +54,12 @@ function categoryStyle(cat: string | null | undefined): string {
 interface Props {
 	briefings: IntelBriefing[];
 	articles: IntelArticle[];
+	feed: TempArticle[];
 }
 
-type View = 'briefing' | 'preserved';
+type View = 'briefing' | 'preserved' | 'feed';
 
-export default function IntelViewer({ briefings, articles }: Props) {
+export default function IntelViewer({ briefings, articles, feed }: Props) {
 	const [selectedId, setSelectedId] = useState<number | null>(
 		briefings.length > 0 ? briefings[0].id : null,
 	);
@@ -84,6 +88,16 @@ export default function IntelViewer({ briefings, articles }: Props) {
 
 	const hasArticles = selectedArticles.length > 0;
 	const hasMarkdown = selected?.aiAnalysisMarkdown && selected.aiAnalysisMarkdown !== 'articles';
+
+	// Feed: most recent tracking_date in temp_articles
+	const feedDate = feed.length > 0 ? feed[0].trackingDate : null;
+	const todayFeed = feedDate ? feed.filter(a => a.trackingDate === feedDate) : [];
+	// Group by source, preserving insertion order of first occurrence
+	const feedBySource = todayFeed.reduce<Record<string, TempArticle[]>>((acc, a) => {
+		if (!acc[a.source]) acc[a.source] = [];
+		acc[a.source].push(a);
+		return acc;
+	}, {});
 
 	// Search filtering
 	function matchesSearch(a: IntelArticle) {
@@ -181,6 +195,28 @@ export default function IntelViewer({ briefings, articles }: Props) {
 								</button>
 							))}
 							<div className="mt-3 border-t border-slate-200 dark:border-slate-800" />
+						</div>
+					)}
+
+					{/* ── Today's Feed ─────────────────────────────────── */}
+					{todayFeed.length > 0 && (
+						<div>
+							<button
+								onClick={() => { setView('feed'); setSearchQuery(''); setSidebarOpen(false); }}
+								className={[
+									'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors',
+									view === 'feed'
+										? 'bg-emerald-50 dark:bg-emerald-500/10'
+										: 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
+								].join(' ')}
+							>
+								<span className="text-[10px] font-bold tracking-widest uppercase text-emerald-600 dark:text-emerald-500 flex items-center gap-1.5">
+									<IconLayoutGrid size={11} />
+									Today's Feed ({todayFeed.length})
+								</span>
+								<IconChevronRight size={11} className="text-emerald-500" />
+							</button>
+							<div className="mt-2 border-t border-slate-200 dark:border-slate-800" />
 						</div>
 					)}
 
@@ -351,6 +387,97 @@ export default function IntelViewer({ briefings, articles }: Props) {
 									))}
 								</div>
 							)}
+						</div>
+					)}
+
+					{/* ── Today's Feed view ──────────────────────────────── */}
+					{view === 'feed' && (
+						<div className="max-w-3xl mx-auto px-4 sm:px-10 py-10">
+							<header className="mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
+								<p className="text-xs font-bold tracking-widest uppercase text-emerald-600 dark:text-emerald-500 mb-2 flex items-center gap-1.5">
+									<IconLayoutGrid size={13} />
+									Today's Feed
+								</p>
+								<h2 className="font-serif text-4xl text-slate-900 dark:text-slate-100 tracking-tight">
+									{feedDate ?? '—'}
+								</h2>
+								<p className="text-sm text-slate-500 dark:text-slate-400 mt-3">
+									All {todayFeed.length} scraped articles · titles AI-translated ·{' '}
+									<span className="text-emerald-600 dark:text-emerald-400 font-medium">
+										{todayFeed.filter(a => a.isImportant).length} flagged for full analysis
+									</span>
+									{' '}· deleted at next morning run
+								</p>
+								<p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+									Click any source link to read the original. AI reasoning shown below each title.
+								</p>
+							</header>
+
+							{Object.entries(feedBySource).map(([source, arts]) => (
+								<div key={source} className="mb-8">
+									<div className="flex items-center gap-3 mb-3">
+										<h3 className="text-xs font-bold tracking-widest uppercase text-slate-500 dark:text-slate-400">
+											{source}
+										</h3>
+										<div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
+										<span className="text-[10px] font-mono text-slate-400">{arts.length} articles</span>
+									</div>
+
+									<div className="space-y-2">
+										{arts.map(a => (
+											<div
+												key={a.id}
+												className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-3 flex items-start gap-3"
+											>
+												<div className="mt-0.5 shrink-0">
+													{a.isImportant ? (
+														<span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+															<IconCheck size={11} strokeWidth={2.5} />
+														</span>
+													) : (
+														<span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600">
+															<IconMinus size={11} strokeWidth={2.5} />
+														</span>
+													)}
+												</div>
+
+												<div className="flex-1 min-w-0">
+													<p className={[
+														'text-sm font-medium leading-snug',
+														a.isImportant
+															? 'text-slate-900 dark:text-slate-100'
+															: 'text-slate-500 dark:text-slate-500',
+													].join(' ')}>
+														{a.titleEn ?? a.title}
+													</p>
+													{a.importanceReason && (
+														<p className={[
+															'text-[11px] mt-1 leading-relaxed',
+															a.isImportant
+																? 'text-emerald-600 dark:text-emerald-500'
+																: 'text-slate-400 dark:text-slate-600',
+														].join(' ')}>
+															{a.isImportant ? '✓ ' : '— '}{a.importanceReason}
+														</p>
+													)}
+												</div>
+
+												{safeUrl(a.url) && (
+													<a
+														href={safeUrl(a.url)!}
+														target="_blank"
+														rel="noopener noreferrer"
+														className="shrink-0 mt-0.5 text-slate-300 dark:text-slate-700 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+														title="Open original article"
+													>
+														<IconExternalLink size={14} />
+													</a>
+												)}
+											</div>
+										))}
+									</div>
+								</div>
+							))}
 						</div>
 					)}
 
