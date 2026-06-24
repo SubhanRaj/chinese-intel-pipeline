@@ -153,6 +153,9 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 		try { localStorage.setItem('intel-sidebar-v2', open ? '1' : '0'); } catch { /* */ }
 	};
 
+	// Only close sidebar on mobile — on desktop it stays pinned
+	const closeSidebarMobile = () => { if (window.innerWidth < 768) persistSidebar(false); };
+
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
 			if (e.key === 'Escape') { setDrawer(null); setPreservedDrawer(null); }
@@ -259,8 +262,8 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 				].join(' ')}
 			/>
 			<aside className={[
-				'fixed md:relative inset-y-0 left-0 z-30 shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 print:hidden transition-all duration-300 ease-in-out',
-				sidebarOpen ? 'translate-x-0 w-80' : '-translate-x-full md:-translate-x-80 w-80 md:w-0 md:border-r-0',
+				'fixed md:relative inset-y-0 left-0 z-30 w-80 shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 print:hidden transition-transform duration-300 ease-in-out md:translate-x-0',
+				sidebarOpen ? 'translate-x-0' : '-translate-x-full',
 			].join(' ')}>
 				<div className="px-6 py-5 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between">
 					<div>
@@ -282,10 +285,10 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 						</button>
 						<button
 							onClick={() => persistSidebar(false)}
-							className="mt-1 p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-							aria-label="Collapse sidebar"
+							className="mt-1 p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors md:hidden"
+							aria-label="Close sidebar"
 						>
-							<IconChevronLeft size={18} />
+							<IconX size={18} />
 						</button>
 					</div>
 				</div>
@@ -302,7 +305,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 						return (
 							<div>
 								<button
-									onClick={() => { persistView('preserved'); clearSearch(); persistSidebar(false); }}
+									onClick={() => { persistView('preserved'); clearSearch(); closeSidebarMobile(); }}
 									className={[
 										'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors',
 										view === 'preserved' ? 'bg-amber-50 dark:bg-amber-500/10' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
@@ -317,7 +320,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 								{filtered.map(a => (
 									<button
 										key={a.id}
-										onClick={() => { setPreservedDrawer(a); persistSidebar(false); }}
+										onClick={() => { setPreservedDrawer(a); closeSidebarMobile(); }}
 										className="w-full text-left rounded-lg px-3 py-2 mb-0.5 flex items-start gap-2.5 transition-all duration-100 text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 group"
 									>
 										<IconBookmark size={13} className="shrink-0 mt-0.5 text-amber-500" />
@@ -342,7 +345,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 						return (
 							<div>
 								<button
-									onClick={() => { persistView('feed'); clearSearch(); persistSidebar(false); }}
+									onClick={() => { persistView('feed'); clearSearch(); closeSidebarMobile(); }}
 									className={[
 										'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors',
 										view === 'feed' ? 'bg-emerald-50 dark:bg-emerald-500/10' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
@@ -386,7 +389,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 										return (
 											<button
 												key={b.id}
-												onClick={() => { persistSelectedId(b.id); persistView('briefing'); clearSearch(); setDrawer(null); persistSidebar(false); }}
+												onClick={() => { persistSelectedId(b.id); persistView('briefing'); clearSearch(); setDrawer(null); closeSidebarMobile(); }}
 												className={[
 													'w-full text-left rounded-lg px-3 py-2.5 mb-0.5 flex items-center gap-3 transition-all duration-100',
 													isActive
@@ -407,7 +410,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 				</nav>
 
 				<div className="shrink-0 px-3 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-					<form onSubmit={e => { e.preventDefault(); commitSearch(searchInput); persistSidebar(false); }}>
+					<form onSubmit={e => { e.preventDefault(); commitSearch(searchInput); closeSidebarMobile(); }}>
 						<div className="relative">
 							<IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
 							<input
@@ -443,9 +446,9 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 		</>
 	);
 
-	// ── Mobile top bar (also shows sidebar toggle on desktop when collapsed) ──
+	// ── Mobile top bar ─────────────────────────────────────────────────────────
 	const mobileTopBar = (
-		<div className={['flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 print:hidden', sidebarOpen ? 'md:hidden' : ''].join(' ')}>
+		<div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 print:hidden">
 			<button
 				onClick={() => persistSidebar(true)}
 				className="p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
