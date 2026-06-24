@@ -45,56 +45,141 @@ function buildSources(yyyy: string, mm: string, dd: string): Source[] {
 	];
 }
 
-// ---------- fetch+HTMLRewriter fallback scraper ----------
+// ---------- fetch engine ----------
 
-async function fetchAndParseSource(url: string, sourceName: string): Promise<ScrapedArticle[]> {
+const FETCH_HEADERS = {
+	'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+	'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+	'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+};
+
+async function fetchHtml(url: string, referer?: string): Promise<string | null> {
 	try {
-		const response = await fetch(url, {
-			headers: {
-				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-				'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-				'Referer': new URL(url).origin + '/',
-			},
+		const res = await fetch(url, {
+			headers: { ...FETCH_HEADERS, ...(referer ? { Referer: referer } : {}) },
 			redirect: 'follow',
 		});
-
-		if (!response.ok) {
-			console.warn(`[FETCH FALLBACK] ${sourceName}: HTTP ${response.status} for ${url}`);
-			return [];
-		}
-
-		let pageTitle = '';
-		const textChunks: string[] = [];
-
-		const transformed = new HTMLRewriter()
-			.on('title', { text(chunk) { pageTitle += chunk.text; } })
-			.on('h1, h2, h3, h4, p, article, .content, .article-content, .news-content, .article-body', {
-				text(chunk) { if (chunk.text.trim()) textChunks.push(chunk.text.trim()); },
-			})
-			.transform(response);
-
-		await transformed.text(); // drain stream to trigger handlers
-
-		const fullText = textChunks.join('\n').trim();
-		if (fullText.length < 100) {
-			console.warn(`[FETCH FALLBACK] ${sourceName}: too little text (${fullText.length} chars) — likely JS-rendered`);
-			return [];
-		}
-
-		console.log(`[FETCH FALLBACK] ${sourceName}: extracted ${fullText.length} chars`);
-		return [{ title: pageTitle.trim() || url, full_text: fullText, url, source: sourceName }];
+		if (!res.ok) { console.warn(`[FETCH] ${res.status} for ${url}`); return null; }
+		return await res.text();
 	} catch (err) {
-		console.error(`[FETCH FALLBACK ERROR] ${sourceName}:`, err);
-		return [];
+		console.warn(`[FETCH] Error fetching ${url}:`, err);
+		return null;
 	}
 }
 
-async function fetchAndParseSources(sources: Source[]): Promise<ScrapedArticle[]> {
-	const results = await Promise.allSettled(
-		sources.map(({ url, name }) => fetchAndParseSource(url, name)),
-	);
-	return results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+// Extract visible text from a block of HTML using HTMLRewriter
+async function extractText(html: string): Promise<string> {
+	const chunks: string[] = [];
+	const res = new Response(html, { headers: { 'Content-Type': 'text/html' } });
+	const transformed = new HTMLRewriter()
+		.on('p, h1, h2, h3, h4, article, .content, .article-content, .news-content', {
+			text(chunk) { if (chunk.text.trim()) chunks.push(chunk.text.trim()); },
+		})
+		.transform(res);
+	await transformed.text();
+	return chunks.join('\n').trim();
+}
+
+// -- Guangxi Daily: has a proper epaper API
+// Index:   https://ssw.gxrb.com.cn/json/interface/epaper/api.php?
+// Article: https://ssw.gxrb.com.cn/json/interface/epaper/api.php?name=gxrb&date=YYYY-MM-DD&code=001&xuhao=1
+async function scrapeGuangxi(yyyy: string, mm: string, dd: string): Promise<ScrapedArticle[]> {
+	const base = 'https://ssw.gxrb.com.cn';
+	const date = `${yyyy}-${mm}-${dd}`;
+	const indexUrl = `${base}/json/interface/epaper/api.php?`;
+	const indexHtml = await fetchHtml(indexUrl, base + '/');
+	if (!indexHtml) return [];
+
+	// Extract all article links: href="?name=gxrb&date=...&code=001&xuhao=1" title="..."
+	const linkRe = /href="\?name=gxrb&date=[^&]+&code=(\d+)&xuhao=(\d+)"\s+title="([^"]+)"/g;
+	const seen = new Set<string>();
+	const links: { code: string; xuhao: string; title: string }[] = [];
+	for (const m of indexHtml.matchAll(linkRe)) {
+		const key = `${m[1]}-${m[2]}`;
+		// Skip editor credit lines and app links
+		if (seen.has(key) || /责任编辑|客户端|版责|广西云/.test(m[3])) continue;
+		seen.add(key);
+		links.push({ code: m[1], xuhao: m[2], title: m[3] });
+	}
+
+	console.log(`[GUANGXI] Found ${links.length} article links`);
+
+	const articles: ScrapedArticle[] = [];
+	// Limit to 20 articles to stay within AI context budget
+	for (const { code, xuhao, title } of links.slice(0, 20)) {
+		const articleUrl = `${base}/json/interface/epaper/api.php?name=gxrb&date=${date}&code=${code}&xuhao=${xuhao}`;
+		const html = await fetchHtml(articleUrl, indexUrl);
+		if (!html) continue;
+		const text = await extractText(html);
+		if (text.length < 50) continue;
+		articles.push({ title, full_text: text, url: articleUrl, source: 'Guangxi Daily' });
+	}
+
+	console.log(`[GUANGXI] Scraped ${articles.length} articles with content`);
+	return articles;
+}
+
+// -- Hainan Daily: static HTML, article links embedded as JS var map_NODE = { l: [...] }
+// Node page URL already contains today's node ID (built by buildSources)
+async function scrapeHainan(nodeUrl: string): Promise<ScrapedArticle[]> {
+	const base = 'https://news.hndaily.cn';
+	const nodeHtml = await fetchHtml(nodeUrl, base + '/');
+	if (!nodeHtml) return [];
+
+	// Extract content filenames from: l:["content_58464_19645177.htm", ...]
+	const contentFiles: string[] = [];
+	for (const m of nodeHtml.matchAll(/l:\[([^\]]+)\]/g)) {
+		const files = m[1].match(/"(content_[^"]+\.htm)"/g);
+		if (files) contentFiles.push(...files.map(f => f.replace(/"/g, '')));
+	}
+
+	// Base path is same directory as the node page
+	const basePath = nodeUrl.substring(0, nodeUrl.lastIndexOf('/') + 1);
+	console.log(`[HAINAN] Found ${contentFiles.length} content files`);
+
+	const articles: ScrapedArticle[] = [];
+	for (const file of contentFiles.slice(0, 15)) {
+		const articleUrl = basePath + file;
+		const html = await fetchHtml(articleUrl, nodeUrl);
+		if (!html) continue;
+
+		let title = '';
+		const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+		if (titleMatch) title = titleMatch[1].trim();
+
+		const text = await extractText(html);
+		if (text.length < 50) continue;
+		articles.push({ title: title || file, full_text: text, url: articleUrl, source: 'Hainan Daily' });
+	}
+
+	console.log(`[HAINAN] Scraped ${articles.length} articles with content`);
+	return articles;
+}
+
+// -- Generic HTMLRewriter fallback for sources without a known API pattern
+async function scrapeGeneric(url: string, sourceName: string): Promise<ScrapedArticle[]> {
+	const html = await fetchHtml(url, new URL(url).origin + '/');
+	if (!html) return [];
+	const title = (html.match(/<title>([^<]+)<\/title>/i) || [])[1]?.trim() || url;
+	const text = await extractText(html);
+	if (text.length < 100) {
+		console.warn(`[GENERIC] ${sourceName}: only ${text.length} chars — likely JS-rendered, skipping`);
+		return [];
+	}
+	console.log(`[GENERIC] ${sourceName}: ${text.length} chars`);
+	return [{ title, full_text: text, url, source: sourceName }];
+}
+
+async function fetchAndParseSources(sources: Source[], yyyy: string, mm: string, dd: string): Promise<ScrapedArticle[]> {
+	const results = await Promise.allSettled([
+		scrapeGuangxi(yyyy, mm, dd),
+		scrapeHainan(sources.find(s => s.name === 'Hainan Daily')!.url),
+		// Generic fallback for the rest — will silently return [] for JS-rendered ones
+		...sources
+			.filter(s => s.name !== 'Guangxi Daily' && s.name !== 'Hainan Daily')
+			.map(s => scrapeGeneric(s.url, s.name)),
+	]);
+	return results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
 }
 
 // ---------- puppeteer helpers ----------
@@ -205,6 +290,7 @@ interface AiArticle {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function analyseWithWorkersAI(ai: any, articles: ScrapedArticle[]): Promise<AiArticle[]> {
 	const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+		max_tokens: 4096, // default is 256 — not enough for a JSON array of 30+ articles
 		messages: [
 			{ role: 'system', content: SYSTEM_PROMPT },
 			{
@@ -212,23 +298,30 @@ async function analyseWithWorkersAI(ai: any, articles: ScrapedArticle[]): Promis
 				content: JSON.stringify(
 					articles.map((a) => ({
 						title: a.title,
-						full_text: a.full_text.slice(0, 2_000), // cap per-article to stay within context
+						full_text: a.full_text.slice(0, 300), // Chinese ~2 tok/char; 300 chars ≈ 600 tokens
 						url: a.url,
 					})),
-				).slice(0, 100_000),
+				).slice(0, 6_000), // ~12k tokens; system prompt ~500tok, output ~4k → fits in 24k ctx
 			},
 		],
 	});
 
-	if (!response || typeof response.response !== 'string') {
-		throw new Error(`Unexpected Workers AI response shape: ${JSON.stringify(response)}`);
+	// Workers AI returns { response: string } normally, but { choices: [...] } when max_tokens is set
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const rawText: string | undefined =
+		typeof response?.response === 'string'
+			? (response.response as string)
+			: (response?.choices?.[0]?.message?.content as string | undefined);
+
+	if (!rawText) {
+		throw new Error(`Unexpected Workers AI response shape: ${JSON.stringify(response).slice(0, 200)}`);
 	}
 
 	// Extract all [...] JSON arrays from the response and try each from last to first.
 	// The model sometimes echoes the input array before its output, so we prefer the last match.
-	const allMatches = [...response.response.matchAll(/\[[\s\S]*?\]/g)];
+	const allMatches = [...rawText.matchAll(/\[[\s\S]*?\]/g)];
 	// Also try a greedy match for the largest array span
-	const greedyMatch = response.response.match(/\[[\s\S]*\]/);
+	const greedyMatch = rawText.match(/\[[\s\S]*\]/);
 	const candidates = greedyMatch ? [greedyMatch[0], ...allMatches.map(m => m[0])] : allMatches.map(m => m[0]);
 
 	for (const candidate of candidates) {
@@ -340,7 +433,7 @@ async function runPipeline(env: Env): Promise<string> {
 	} catch (puppeteerErr) {
 		console.warn(`Puppeteer failed (${(puppeteerErr as Error).message}). Falling back to fetch+HTMLRewriter…`);
 		scrapeMode = 'fetch-fallback';
-		scrapedArticles = await fetchAndParseSources(sources);
+		scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
 		console.log(`Fetch fallback yielded ${scrapedArticles.length} articles.`);
 	}
 
