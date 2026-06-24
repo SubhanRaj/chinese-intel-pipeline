@@ -454,9 +454,8 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 									</div>
 									<div className="space-y-2">
 										{arts.map(a => {
-											// For important articles, find the matching cluster so we can open the drawer directly
-											const matchedArticle = a.isImportant ? articles.find(art => art.url === a.url) : undefined;
-											const matchedCluster = matchedArticle?.clusterId ? clusters.find(c => c.id === matchedArticle.clusterId) : undefined;
+											// For important articles, look up the cluster via FK directly
+											const matchedCluster = (a.isImportant && a.clusterId) ? clusters.find(c => c.id === a.clusterId) : undefined;
 											const clusterArticles = matchedCluster ? articles.filter(art => art.clusterId === matchedCluster.id) : [];
 
 											return (
@@ -482,7 +481,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 														</p>
 													)}
 													{/* Quick-access row for important articles */}
-													{a.isImportant && (
+													{!!a.isImportant && (
 														<div className="flex items-center gap-3 mt-2">
 															{matchedCluster ? (
 																<button
@@ -492,9 +491,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 																	<IconArticle size={12} />
 																	View Full Analysis
 																</button>
-															) : (
-																<span className="text-[11px] text-slate-400 dark:text-slate-600 italic">Analysis processing…</span>
-															)}
+															) : null}
 															{safeUrl(a.url) && (
 																<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 transition-colors">
 																	<IconExternalLink size={11} />

@@ -768,6 +768,16 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 
 		const clusterId = clusterRows[0].id;
 
+		// Backfill cluster_id on temp_articles for each article in this cluster
+		for (const idx of cluster.article_indices) {
+			const scraped = importantScraped[idx];
+			if (scraped) {
+				await env.DB.prepare(
+					`UPDATE temp_articles SET cluster_id = ? WHERE tracking_date = ? AND url = ?`,
+				).bind(clusterId, trackingDate, scraped.url).run();
+			}
+		}
+
 		for (const idx of cluster.article_indices) {
 			const ai = aiArticles[idx];
 			const scraped = importantScraped[idx];
