@@ -454,11 +454,16 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 									</div>
 									<div className="space-y-2">
 										{arts.map(a => {
-											// FK lookup (populated after next pipeline run); fall back to URL match for existing data
+											// FK lookup → URL match → title match (handles minor URL differences between runs)
 											const matchedCluster = a.isImportant
 												? (a.clusterId
 													? clusters.find(c => c.id === a.clusterId)
-													: (() => { const art = articles.find(x => x.url === a.url); return art?.clusterId ? clusters.find(c => c.id === art.clusterId) : undefined; })())
+													: (() => {
+														const art = articles.find(x => x.url === a.url)
+															?? articles.find(x => a.titleEn && x.title === a.titleEn)
+															?? articles.find(x => a.title && x.title === a.title);
+														return art?.clusterId ? clusters.find(c => c.id === art.clusterId) : undefined;
+													})())
 												: undefined;
 											const clusterArticles = matchedCluster ? articles.filter(art => art.clusterId === matchedCluster.id) : [];
 
