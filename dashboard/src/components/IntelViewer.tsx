@@ -453,8 +453,14 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 										<span className="text-[11px] font-mono text-slate-500">{arts.length} articles</span>
 									</div>
 									<div className="space-y-2">
-										{arts.map(a => (
-											<div key={a.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-3 flex items-start gap-3">
+										{arts.map(a => {
+											// For important articles, find the matching cluster so we can open the drawer directly
+											const matchedArticle = a.isImportant ? articles.find(art => art.url === a.url) : undefined;
+											const matchedCluster = matchedArticle?.clusterId ? clusters.find(c => c.id === matchedArticle.clusterId) : undefined;
+											const clusterArticles = matchedCluster ? articles.filter(art => art.clusterId === matchedCluster.id) : [];
+
+											return (
+											<div key={a.id} className={['bg-white dark:bg-slate-900 border rounded-lg px-4 py-3 flex items-start gap-3', a.isImportant ? 'border-emerald-200 dark:border-emerald-800/50' : 'border-slate-200 dark:border-slate-800'].join(' ')}>
 												<div className="mt-0.5 shrink-0">
 													{a.isImportant ? (
 														<span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
@@ -475,14 +481,38 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 															{a.isImportant ? '✓ ' : '— '}{a.importanceReason}
 														</p>
 													)}
+													{/* Quick-access row for important articles */}
+													{a.isImportant && (
+														<div className="flex items-center gap-3 mt-2">
+															{matchedCluster ? (
+																<button
+																	onClick={() => setDrawer({ cluster: matchedCluster, articles: clusterArticles })}
+																	className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+																>
+																	<IconArticle size={12} />
+																	View Full Analysis
+																</button>
+															) : (
+																<span className="text-[11px] text-slate-400 dark:text-slate-600 italic">Analysis processing…</span>
+															)}
+															{safeUrl(a.url) && (
+																<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 transition-colors">
+																	<IconExternalLink size={11} />
+																	Source
+																</a>
+															)}
+														</div>
+													)}
 												</div>
-												{safeUrl(a.url) && (
+												{/* For skipped articles, show the source link on the right as before */}
+												{!a.isImportant && safeUrl(a.url) && (
 													<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-0.5 text-slate-300 dark:text-slate-700 hover:text-blue-500 dark:hover:text-blue-400 transition-colors" title="Open original article">
 														<IconExternalLink size={14} />
 													</a>
 												)}
 											</div>
-										))}
+											);
+										})}
 									</div>
 								</div>
 							))}
