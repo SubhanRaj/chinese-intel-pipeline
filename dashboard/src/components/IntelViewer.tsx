@@ -801,11 +801,21 @@ interface ClusterDrawerProps {
 
 function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserveAndDelete }: ClusterDrawerProps) {
 	const [chineseFor, setChineseFor] = useState<number | null>(null);
+	const [localArticles, setLocalArticles] = useState<IntelArticle[]>([]);
 	const open = state !== null;
 
-	useEffect(() => { setChineseFor(null); }, [state?.cluster.id]);
+	useEffect(() => {
+		setChineseFor(null);
+		setLocalArticles(state?.articles ?? []);
+	}, [state?.cluster.id]);
 
-	const { cluster, articles } = state ?? { cluster: null, articles: [] };
+	// Sync if parent updates articles (e.g. preserve-all)
+	useEffect(() => {
+		if (state?.articles) setLocalArticles(state.articles);
+	}, [state?.articles]);
+
+	const { cluster } = state ?? { cluster: null };
+	const articles = localArticles;
 	const sources: string[] = (() => { try { return JSON.parse(cluster?.sources ?? '[]'); } catch { return []; } })();
 	const isMultiSource = articles.length > 1;
 	const anyPreserved = articles.some(a => a.isPreserved);
@@ -924,7 +934,11 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 														</button>
 													)}
 													<button
-														onClick={() => togglePreserve(article.id, article.isPreserved ?? 0)}
+														onClick={() => {
+															const next = article.isPreserved ? 0 : 1;
+															setLocalArticles(prev => prev.map(a => a.id === article.id ? { ...a, isPreserved: next } : a));
+															togglePreserve(article.id, article.isPreserved ?? 0);
+														}}
 														className={['p-1 rounded transition-colors', article.isPreserved ? 'text-amber-500' : 'text-slate-300 dark:text-slate-600 hover:text-amber-500'].join(' ')}
 														title={article.isPreserved ? 'Unpreserve' : 'Preserve this source'}
 													>
