@@ -148,9 +148,9 @@ All scraped article titles sent to Llama. The model evaluates every article for 
 { "index": 0, "title_en": "English title", "important": true, "reason": "One sentence explanation" }
 ```
 
-**Marked important:** military movements, senior leadership decisions, foreign policy, economic policy with international impact, technology with strategic implications, significant unrest or politically notable events.
+**Marked important** (aim ~20–30% of articles): military movements/procurement/doctrine, senior national or provincial leadership decisions, bilateral diplomacy and cross-border events, economic policy with international implications, technology with strategic or dual-use potential, significant unrest or politically sensitive events.
 
-**Marked not important:** local infrastructure, sports/entertainment, routine agriculture/weather, advertising, editorial credits.
+**Marked not important:** local infrastructure, sports/entertainment/tourism, routine agriculture/weather/education, advertising, administrative notices, provincial economic statistics with no international angle, party study campaigns, purely domestic trade fairs or signing ceremonies.
 
 The reason for both included and excluded articles is stored in `temp_articles` and shown in the Today's Feed dashboard view — so you can audit and improve the filter criteria over time.
 
@@ -168,7 +168,7 @@ Runs only on the important subset (~8–12 articles). Full translation, geopolit
 | Limit | Value | Why |
 |---|---|---|
 | Per-article text | 400 chars | ~800 tokens; fewer articles means more budget per article |
-| Total JSON input | 6,000 chars | ~12,000 tokens |
+| Total JSON input | 5,800 chars budget | Articles added one-by-one until budget exhausted — no mid-JSON truncation |
 | `max_tokens` output | 4,096 | Default 256 truncates JSON arrays |
 | Model context window | 24,000 tokens | System ~500 + input ~12k + output ~4k ≈ 16,500 — safe |
 
@@ -254,7 +254,9 @@ One card per cluster (not per article). When multiple newspapers covered the sam
 Articles preserved via the bookmark button. Exempt from 30-day cleanup. Shown as individual article cards since preserved articles span multiple dates where cluster context no longer applies.
 
 ### Search
-Live client-side filter across title, summary, and source. Available in Briefing and Archive views.
+**Sidebar search** — filters the sidebar itself: Preserved articles, Today's Feed section, and Briefing entries all hide when they don't match the query. Clicking a result carries the search term into the main view's search box.
+
+**Main view search** — live client-side filter across title, summary, and source. Available in Briefing and Archive views.
 
 ---
 
