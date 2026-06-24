@@ -8,6 +8,7 @@ import {
 	IconNews,
 	IconCalendar,
 	IconChevronRight,
+	IconChevronLeft,
 	IconClock,
 	IconPrinter,
 	IconExternalLink,
@@ -73,11 +74,13 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 
 	const [selectedId, setSelectedId] = useState<number | null>(defaultBriefingId);
 	const [dark, setDark] = useState(false);
-	const [sidebarOpen, setSidebarOpen] = useState(false);
+	const [sidebarOpen, setSidebarOpen] = useState(true);
 	const [drawer, setDrawer] = useState<DrawerState | null>(null);
 	const [preservedDrawer, setPreservedDrawer] = useState<IntelArticle | null>(null);
 	const [view, setView] = useState<View>('briefing');
 	const [preSearchView, setPreSearchView] = useState<View>('briefing');
+	// searchInput = what the user is typing; searchQuery = committed on Enter/submit
+	const [searchInput, setSearchInput] = useState('');
 	const [searchQuery, setSearchQuery] = useState('');
 	const [, startTransition] = useTransition();
 	const [hydrated, setHydrated] = useState(false);
@@ -97,7 +100,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 				if (briefings.some(b => b.id === id)) setSelectedId(id);
 			}
 
-			const savedSidebar = sessionStorage.getItem('intel-sidebar');
+			const savedSidebar = localStorage.getItem('intel-sidebar');
 			if (savedSidebar !== null) setSidebarOpen(savedSidebar === '1');
 		} catch { /* storage unavailable */ }
 		setHydrated(true);
@@ -123,15 +126,19 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 		try { sessionStorage.setItem('intel-view', v); } catch { /* */ }
 	};
 
-	const enterSearch = (q: string, from?: View) => {
-		if (q) {
-			if (view !== 'search') setPreSearchView(view);
-			if (from && from !== 'search') setPreSearchView(from);
-			setView('search');
-		} else {
-			setView(preSearchView);
-		}
-		setSearchQuery(q);
+	const commitSearch = (q: string) => {
+		const trimmed = q.trim();
+		if (!trimmed) return;
+		if (view !== 'search') setPreSearchView(view);
+		setView('search');
+		setSearchQuery(trimmed);
+		setSearchInput(trimmed);
+	};
+
+	const clearSearch = () => {
+		setSearchInput('');
+		setSearchQuery('');
+		setView(preSearchView);
 	};
 
 	const persistSelectedId = (id: number | null) => {
@@ -141,7 +148,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 
 	const persistSidebar = (open: boolean) => {
 		setSidebarOpen(open);
-		try { sessionStorage.setItem('intel-sidebar', open ? '1' : '0'); } catch { /* */ }
+		try { localStorage.setItem('intel-sidebar', open ? '1' : '0'); } catch { /* */ }
 	};
 
 	useEffect(() => {
@@ -245,13 +252,13 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 			<div
 				onClick={() => persistSidebar(false)}
 				className={[
-					'fixed inset-0 z-20 bg-black/40 md:hidden transition-opacity duration-300',
+					'fixed inset-0 z-20 bg-black/40 md:hidden transition-opacity duration-300 print:hidden',
 					sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
 				].join(' ')}
 			/>
 			<aside className={[
-				'fixed md:relative inset-y-0 left-0 z-30 w-80 shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 print:hidden transition-transform duration-300 ease-in-out md:translate-x-0',
-				sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+				'fixed md:relative inset-y-0 left-0 z-30 shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 print:hidden transition-all duration-300 ease-in-out',
+				sidebarOpen ? 'translate-x-0 w-80' : '-translate-x-full md:-translate-x-80 w-80 md:w-0 md:border-r-0',
 			].join(' ')}>
 				<div className="px-6 py-5 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between">
 					<div>
@@ -273,10 +280,10 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 						</button>
 						<button
 							onClick={() => persistSidebar(false)}
-							className="mt-1 p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors md:hidden"
-							aria-label="Close sidebar"
+							className="mt-1 p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+							aria-label="Collapse sidebar"
 						>
-							<IconX size={18} />
+							<IconChevronLeft size={18} />
 						</button>
 					</div>
 				</div>
@@ -284,7 +291,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 				<nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4 min-h-0">
 					{/* ── Preserved ── */}
 					{(() => {
-						const sq = searchQuery.toLowerCase();
+						const sq = searchInput.toLowerCase();
 						const filtered = preservedArticles.filter(a =>
 							!sq || (a.title?.toLowerCase().includes(sq)) || a.trackingDate.includes(sq)
 						);
@@ -293,7 +300,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 						return (
 							<div>
 								<button
-									onClick={() => { if (searchQuery) { enterSearch(searchQuery, 'preserved'); } else { persistView('preserved'); } persistSidebar(false); }}
+									onClick={() => { persistView('preserved'); clearSearch(); persistSidebar(false); }}
 									className={[
 										'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors',
 										view === 'preserved' ? 'bg-amber-50 dark:bg-amber-500/10' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
@@ -326,14 +333,14 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 
 					{/* ── Today's Feed ── */}
 					{(() => {
-						const sq = searchQuery.toLowerCase();
+						const sq = searchInput.toLowerCase();
 						const matches = !sq || 'feed'.includes(sq) || "today's feed".includes(sq)
 							|| todayFeed.some(a => (a.titleEn ?? a.title).toLowerCase().includes(sq));
 						if (!todayFeed.length || !matches) return null;
 						return (
 							<div>
 								<button
-									onClick={() => { if (searchQuery) { enterSearch(searchQuery, 'feed'); } else { persistView('feed'); } persistSidebar(false); }}
+									onClick={() => { persistView('feed'); clearSearch(); persistSidebar(false); }}
 									className={[
 										'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors',
 										view === 'feed' ? 'bg-emerald-50 dark:bg-emerald-500/10' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
@@ -352,7 +359,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 
 					{/* ── Briefings list ── */}
 					{(() => {
-						const sq = searchQuery.toLowerCase();
+						const sq = searchInput.toLowerCase();
 						const filteredBriefings = briefings.filter(b => {
 							if (!sq) return true;
 							if (b.trackingDate.includes(sq)) return true;
@@ -377,7 +384,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 										return (
 											<button
 												key={b.id}
-												onClick={() => { persistSelectedId(b.id); if (searchQuery) { enterSearch(searchQuery, 'briefing'); } else { persistView('briefing'); } setDrawer(null); persistSidebar(false); }}
+												onClick={() => { persistSelectedId(b.id); persistView('briefing'); clearSearch(); setDrawer(null); persistSidebar(false); }}
 												className={[
 													'w-full text-left rounded-lg px-3 py-2.5 mb-0.5 flex items-center gap-3 transition-all duration-100',
 													isActive
@@ -398,35 +405,45 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 				</nav>
 
 				<div className="shrink-0 px-3 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-					<div className="relative">
-						<IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-						<input
-							type="text"
-							value={searchQuery}
-							onChange={e => enterSearch(e.target.value)}
-							placeholder="Search articles, dates, categories…"
-							className="w-full pl-8 pr-7 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors"
-						/>
-						{searchQuery && (
+					<form onSubmit={e => { e.preventDefault(); commitSearch(searchInput); persistSidebar(false); }}>
+						<div className="relative">
+							<IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+							<input
+								type="text"
+								value={searchInput}
+								onChange={e => setSearchInput(e.target.value)}
+								placeholder="Search articles, dates, categories…"
+								className="w-full pl-8 pr-16 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors"
+							/>
+							{(searchInput || searchQuery) && (
+								<button
+									type="button"
+									onClick={clearSearch}
+									className="absolute right-9 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+								>
+									<IconX size={13} />
+								</button>
+							)}
 							<button
-								onClick={() => enterSearch('')}
-								className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+								type="submit"
+								className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+								aria-label="Search"
 							>
-								<IconX size={13} />
+								<IconChevronRight size={16} />
 							</button>
-						)}
-					</div>
+						</div>
+					</form>
 					<p className="text-[11px] text-slate-400 dark:text-slate-600 mt-1.5 px-1">
-						{briefings.length} briefing{briefings.length !== 1 ? 's' : ''} on record
+						{briefings.length} briefing{briefings.length !== 1 ? 's' : ''} on record{searchQuery ? ` · searching "${searchQuery}"` : ''}
 					</p>
 				</div>
 			</aside>
 		</>
 	);
 
-	// ── Mobile top bar ─────────────────────────────────────────────────────────
+	// ── Mobile top bar (also shows sidebar toggle on desktop when collapsed) ──
 	const mobileTopBar = (
-		<div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0">
+		<div className={['flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 print:hidden', sidebarOpen ? 'md:hidden' : ''].join(' ')}>
 			<button
 				onClick={() => persistSidebar(true)}
 				className="p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -483,27 +500,6 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 
 			<main className="flex-1 flex flex-col overflow-hidden md:overflow-y-auto print:overflow-visible print:h-auto">
 				{mobileTopBar}
-				{/* ── Persistent search bar — rendered once, never remounts ── */}
-				<div className="shrink-0 px-4 sm:px-10 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 print:hidden">
-					<div className="relative max-w-3xl mx-auto">
-						<IconSearch size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-						<input
-							type="text"
-							value={searchQuery}
-							onChange={e => enterSearch(e.target.value)}
-							placeholder="Search all articles, categories…"
-							className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors"
-						/>
-						{searchQuery && (
-							<button
-								onClick={() => enterSearch('')}
-								className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-							>
-								<IconX size={14} />
-							</button>
-						)}
-					</div>
-				</div>
 				<div className="flex-1 overflow-y-auto">
 
 					{/* ── Search results view ────────────────────────────── */}
@@ -529,6 +525,16 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 									<p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
 										{searchResults.length} result{searchResults.length !== 1 ? 's' : ''} across {dates.length} briefing{dates.length !== 1 ? 's' : ''}
 									</p>
+									<form className="mt-4" onSubmit={e => { e.preventDefault(); commitSearch(searchInput); }}>
+										<div className="flex gap-2">
+											<div className="relative flex-1">
+												<IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+												<input type="text" value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search again…" className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors" />
+												{(searchInput || searchQuery) && <button type="button" onClick={clearSearch} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><IconX size={13} /></button>}
+											</div>
+											<button type="submit" className="shrink-0 px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors">Search</button>
+										</div>
+									</form>
 								</header>
 								{searchResults.length === 0 ? (
 									<div className="text-center py-16">
@@ -738,6 +744,18 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 											Print Briefing
 										</Button>
 									</div>
+									{displayItems.length > 0 && (
+										<form className="mt-4 print:hidden" onSubmit={e => { e.preventDefault(); commitSearch(searchInput); }}>
+											<div className="flex gap-2">
+												<div className="relative flex-1">
+													<IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+													<input type="text" value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search all articles, categories… (Enter)" className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors" />
+													{(searchInput || searchQuery) && <button type="button" onClick={clearSearch} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><IconX size={13} /></button>}
+												</div>
+												<button type="submit" className="shrink-0 px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors">Search</button>
+											</div>
+										</form>
+									)}
 								</header>
 
 								{displayItems.length > 0 ? (
