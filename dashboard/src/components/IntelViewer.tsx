@@ -59,7 +59,7 @@ interface Props {
 	feed: TempArticle[];
 }
 
-type View = 'briefing' | 'preserved' | 'feed';
+type View = 'briefing' | 'preserved' | 'feed' | 'search';
 
 // ── Drawer state ──────────────────────────────────────────────────────────────
 
@@ -77,6 +77,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 	const [drawer, setDrawer] = useState<DrawerState | null>(null);
 	const [preservedDrawer, setPreservedDrawer] = useState<IntelArticle | null>(null);
 	const [view, setView] = useState<View>('briefing');
+	const [preSearchView, setPreSearchView] = useState<View>('briefing');
 	const [searchQuery, setSearchQuery] = useState('');
 	const [sidebarSearch, setSidebarSearch] = useState('');
 	const [, startTransition] = useTransition();
@@ -121,6 +122,17 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 	const persistView = (v: View) => {
 		setView(v);
 		try { sessionStorage.setItem('intel-view', v); } catch { /* */ }
+	};
+
+	const enterSearch = (q: string, from?: View) => {
+		if (q) {
+			if (view !== 'search') setPreSearchView(view);
+			if (from && from !== 'search') setPreSearchView(from);
+			setView('search');
+		} else {
+			setView(preSearchView);
+		}
+		setSearchQuery(q);
 	};
 
 	const persistSelectedId = (id: number | null) => {
@@ -195,6 +207,28 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 	const visibleDisplayItems = displayItems.filter(matchesBriefingSearch);
 	const visiblePreservedArticles = preservedArticles.filter(matchesPreservedSearch);
 
+	// Global search across all dates
+	const allDisplayItems: DisplayItem[] = clusters.length > 0
+		? clusters.map(c => ({
+			cluster: c,
+			clusterArticles: articles.filter(a => a.clusterId === c.id),
+		}))
+		: articles.filter(a => !a.isPreserved).map(a => ({
+			cluster: {
+				id: a.id,
+				trackingDate: a.trackingDate,
+				title: a.title,
+				summary: a.summary,
+				category: a.category,
+				sources: JSON.stringify(a.source ? [a.source] : []),
+				createdAt: a.createdAt,
+			} as IntelCluster,
+			clusterArticles: [a],
+		}));
+	const searchResults = searchQuery
+		? allDisplayItems.filter(matchesBriefingSearch)
+		: [];
+
 	// Feed data
 	const feedDate = feed.length > 0 ? feed[0].trackingDate : null;
 	const todayFeed = feedDate ? feed.filter(a => a.trackingDate === feedDate) : [];
@@ -258,7 +292,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 						return (
 							<div>
 								<button
-									onClick={() => { persistView('preserved'); setSearchQuery(sidebarSearch); persistSidebar(false); }}
+									onClick={() => { if (sidebarSearch) { enterSearch(sidebarSearch, 'preserved'); } else { persistView('preserved'); } persistSidebar(false); }}
 									className={[
 										'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors',
 										view === 'preserved' ? 'bg-amber-50 dark:bg-amber-500/10' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
@@ -298,7 +332,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 						return (
 							<div>
 								<button
-									onClick={() => { persistView('feed'); setSearchQuery(sidebarSearch); persistSidebar(false); }}
+									onClick={() => { if (sidebarSearch) { enterSearch(sidebarSearch, 'feed'); } else { persistView('feed'); } persistSidebar(false); }}
 									className={[
 										'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors',
 										view === 'feed' ? 'bg-emerald-50 dark:bg-emerald-500/10' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
@@ -342,7 +376,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 										return (
 											<button
 												key={b.id}
-												onClick={() => { persistSelectedId(b.id); persistView('briefing'); setDrawer(null); setSearchQuery(sidebarSearch); persistSidebar(false); }}
+												onClick={() => { persistSelectedId(b.id); if (sidebarSearch) { enterSearch(sidebarSearch, 'briefing'); } else { persistView('briefing'); } setDrawer(null); persistSidebar(false); }}
 												className={[
 													'w-full text-left rounded-lg px-3 py-2.5 mb-0.5 flex items-center gap-3 transition-all duration-100',
 													isActive
@@ -448,13 +482,13 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 			<input
 				type="text"
 				value={searchQuery}
-				onChange={e => setSearchQuery(e.target.value)}
-				placeholder="Search articles…"
+				onChange={e => enterSearch(e.target.value)}
+				placeholder="Search all articles…"
 				className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors"
 			/>
 			{searchQuery && (
 				<button
-					onClick={() => setSearchQuery('')}
+					onClick={() => enterSearch('')}
 					className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
 				>
 					<IconX size={14} />
@@ -471,6 +505,44 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 			<main className="flex-1 flex flex-col overflow-hidden md:overflow-y-auto print:overflow-visible print:h-auto">
 				{mobileTopBar}
 				<div className="flex-1 overflow-y-auto">
+
+					{/* ── Search results view ────────────────────────────── */}
+					{view === 'search' && (
+						<div className="max-w-3xl mx-auto px-4 sm:px-10 py-10">
+							<header className="mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
+								<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-2 flex items-center gap-1.5">
+									<IconSearch size={13} />
+									Search Results
+								</p>
+								<h2 className="font-serif text-4xl text-slate-900 dark:text-slate-100 tracking-tight">
+									{searchQuery ? `"${searchQuery}"` : 'All Articles'}
+								</h2>
+								<p className="text-sm text-slate-600 dark:text-slate-400 mt-3">
+									{searchResults.length} result{searchResults.length !== 1 ? 's' : ''} across all briefings
+								</p>
+								<div className="mt-4">{searchBar}</div>
+							</header>
+							{searchResults.length === 0 ? (
+								<div className="text-center py-16">
+									<IconSearch size={40} className="mx-auto text-slate-200 dark:text-slate-700 mb-4" />
+									<p className="text-slate-500">No articles match your search.</p>
+								</div>
+							) : (
+								<div className="space-y-4">
+									{searchResults.map(({ cluster, clusterArticles }) => (
+										<ClusterCard
+											key={cluster.id}
+											cluster={cluster}
+											clusterArticles={clusterArticles}
+											onOpen={() => setDrawer({ cluster, articles: clusterArticles })}
+											onPreserveAll={ids => startTransition(() => togglePreserveCluster(ids, clusterArticles.every(a => !!a.isPreserved)))}
+											onDeleteAll={ids => startTransition(() => deleteCluster(ids))}
+										/>
+									))}
+								</div>
+							)}
+						</div>
+					)}
 
 					{/* ── Preserved view ─────────────────────────────────── */}
 					{view === 'preserved' && (
