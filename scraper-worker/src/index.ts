@@ -318,19 +318,25 @@ const FILTER_PROMPT = `You are a geopolitical intelligence analyst. You will rec
 
 Your task: evaluate every article for significance to international intelligence, foreign policy, and strategic monitoring.
 
-Mark important: true for articles about:
-- Military movements, exercises, procurement, or doctrine
-- Senior leadership decisions, speeches, or personnel changes
-- Foreign policy, diplomacy, or cross-border events
-- Economic policy with international implications
-- Technology programs with strategic or dual-use potential
-- Significant social unrest, disasters, or events with political impact
+Mark important: true ONLY for articles that clearly involve:
+- Military movements, exercises, procurement, weapons, or doctrine
+- Senior national/provincial leadership decisions, speeches, or personnel changes (Xi Jinping, Politburo, ministers, provincial party secretaries)
+- Foreign policy, bilateral diplomacy, cross-border events, or international agreements
+- Economic policy with direct international implications (sanctions, trade, foreign investment rules)
+- Technology programs with strategic or dual-use potential (satellites, AI, semiconductors, defence tech)
+- Significant unrest, disasters, or politically sensitive events
 
 Mark important: false for:
-- Purely local infrastructure (roads, parks, municipal works)
-- Sports, entertainment, cultural festivals
-- Routine agriculture, weather, community services
-- Advertising copy, editorial credits, routine notices
+- Local infrastructure, construction, roads, parks, municipal services
+- Sports, entertainment, arts, tourism, cultural festivals
+- Routine agriculture, weather, education, community welfare
+- Advertising, editorial credits, administrative notices
+- Provincial economic statistics without international angle
+- Party study campaigns, Xi Jinping quote collections, ideological reading materials
+- Trade fairs, business expos, signing ceremonies with purely domestic parties
+- Local government meetings with no foreign or national-security dimension
+
+Be selective: aim for roughly 20–30% of articles as important. When in doubt, mark false.
 
 Return ONLY a valid JSON array — no markdown, no code fences, no explanation:
 [
@@ -411,20 +417,24 @@ interface AiArticle {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function analyseWithWorkersAI(ai: any, articles: ScrapedArticle[]): Promise<AiArticle[]> {
+	// Build input article-by-article so we never truncate mid-JSON.
+	// Each article ~400 chars → budget 5,800 chars total for ~14 articles safely.
+	const inputArticles: { title: string; full_text: string; url: string }[] = [];
+	let budget = 5_800;
+	for (const a of articles) {
+		const entry = { title: a.title, full_text: a.full_text.slice(0, 400), url: a.url };
+		const len = JSON.stringify(entry).length + 2; // +2 for comma/bracket overhead
+		if (budget - len < 0) break;
+		inputArticles.push(entry);
+		budget -= len;
+	}
+	console.log(`[ANALYSIS AI] Sending ${inputArticles.length} of ${articles.length} important articles (budget-capped)`);
+
 	const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
 		max_tokens: 4096, // default 256 truncates JSON arrays — must be set explicitly
 		messages: [
 			{ role: 'system', content: ANALYSIS_PROMPT },
-			{
-				role: 'user',
-				content: JSON.stringify(
-					articles.map((a) => ({
-						title: a.title,
-						full_text: a.full_text.slice(0, 400), // Chinese ~2 tok/char; fewer articles so we can give more per article
-						url: a.url,
-					})),
-				).slice(0, 6_000), // ~12k tokens; system ~500 + output ~4k → fits in 24k ctx
-			},
+			{ role: 'user', content: JSON.stringify(inputArticles) },
 		],
 	});
 
