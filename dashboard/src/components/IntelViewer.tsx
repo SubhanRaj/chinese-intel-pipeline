@@ -673,9 +673,16 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 													)}
 												</div>
 												<div className="flex-1 min-w-0">
-													<p className={['text-base font-medium leading-snug', a.isImportant ? 'text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-500'].join(' ')}>
-														{a.titleEn ?? a.title}
-													</p>
+													<div className="flex items-start gap-2">
+														<p className={['text-base font-medium leading-snug flex-1', a.isImportant ? 'text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-500'].join(' ')}>
+															{a.titleEn ?? a.title}
+														</p>
+														{a.parseType === 'rss' && (
+															<span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 shrink-0 mt-0.5">
+																RSS
+															</span>
+														)}
+													</div>
 													{a.importanceReason && (
 														<p className={['text-sm mt-1.5 leading-relaxed', a.isImportant ? 'text-emerald-700 dark:text-emerald-500' : 'text-slate-500 dark:text-slate-600'].join(' ')}>
 															{a.isImportant ? '✓ ' : '— '}{a.importanceReason}
@@ -1062,6 +1069,11 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 													<span className="text-xs font-semibold text-slate-600 dark:text-slate-300 shrink-0">
 														{article.source}
 													</span>
+													{article.parseType === 'rss' && (
+														<span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 shrink-0">
+															RSS
+														</span>
+													)}
 													{safeUrl(article.url) && (
 														<a
 															href={safeUrl(article.url)!}
@@ -1124,7 +1136,34 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 																{article.summary.replace(/\[HIGH\]/g, '').trim()}
 															</p>
 														)}
-														{article.fullTextEn && (
+														{article.parseType === 'rss' ? (
+															<div className="border-t border-slate-200 dark:border-slate-800 pt-3">
+																<div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 px-4 py-3 space-y-2">
+																	<p className="text-xs font-bold tracking-widest uppercase text-amber-700 dark:text-amber-400">
+																		RSS excerpt only
+																	</p>
+																	<p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+																		Full article text was not available — only the RSS feed excerpt was scraped. Visit the original to read the complete content; use your browser's built-in translate feature for Chinese.
+																	</p>
+																	{safeUrl(article.url) && (
+																		<a
+																			href={safeUrl(article.url)!}
+																			target="_blank"
+																			rel="noopener noreferrer"
+																			className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors"
+																		>
+																			<IconExternalLink size={13} />
+																			Read full article →
+																		</a>
+																	)}
+																</div>
+																{article.fullTextEn && (
+																	<p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mt-3">
+																		{article.fullTextEn}
+																	</p>
+																)}
+															</div>
+														) : article.fullTextEn ? (
 															<div className="border-t border-slate-200 dark:border-slate-800 pt-3">
 																<p className="text-xs font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-2">
 																	Full Translation
@@ -1133,7 +1172,7 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 																	{article.fullTextEn}
 																</p>
 															</div>
-														)}
+														) : null}
 													</>
 												)}
 
@@ -1219,6 +1258,11 @@ function ArticleCard({ article, showDate, onPreserve, onDelete, onReadFull }: Ar
 									</span>
 								)}
 								{article.source && <span className="text-[11px] text-slate-500 dark:text-slate-500 font-mono">{article.source}</span>}
+								{article.parseType === 'rss' && (
+									<span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30">
+										RSS
+									</span>
+								)}
 								{showDate && <span className="text-[11px] text-slate-500 dark:text-slate-500 font-mono">· {article.trackingDate}</span>}
 							</div>
 						)}
@@ -1334,7 +1378,21 @@ function ArticleDrawer({ article, onClose, onPreserve, onUnpreserveAndDelete }: 
 										<p className="text-sm font-bold tracking-widest uppercase text-slate-600 dark:text-slate-400 mb-3">Geopolitical Summary</p>
 										<p className="text-base text-slate-700 dark:text-slate-200 leading-relaxed">{article.summary?.replace(/\[HIGH\]/g, '').trim() ?? 'No summary available.'}</p>
 									</div>
-									{article.fullTextEn ? (
+									{article.parseType === 'rss' ? (
+										<div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 px-5 py-4 space-y-3">
+											<p className="text-xs font-bold tracking-widest uppercase text-amber-700 dark:text-amber-400">RSS excerpt only</p>
+											<p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">Full article text was not available — only the RSS feed excerpt was scraped. Visit the original article to read the complete content; use your browser&apos;s built-in translate feature for Chinese.</p>
+											{safeUrl(article.url) && (
+												<a href={safeUrl(article.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors">
+													<IconExternalLink size={13} />
+													Read full article →
+												</a>
+											)}
+											{article.fullTextEn && (
+												<p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed pt-1 border-t border-amber-200 dark:border-amber-500/20">{article.fullTextEn}</p>
+											)}
+										</div>
+									) : article.fullTextEn ? (
 										<div>
 											<p className="text-sm font-bold tracking-widest uppercase text-slate-600 dark:text-slate-400 mb-3">Full Article (English Translation)</p>
 											<p className="text-base text-slate-700 dark:text-slate-300 leading-relaxed">{article.fullTextEn}</p>

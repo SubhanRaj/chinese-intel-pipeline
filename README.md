@@ -1,6 +1,6 @@
 # Chinese Intel Pipeline
 
-An automated intelligence extraction pipeline that scrapes Chinese provincial newspapers every morning, analyses and translates the content with Cloudflare Workers AI (Llama 3.3 70B), clusters same-topic stories from multiple sources, and serves structured English briefings through an interactive Next.js dashboard with daily email dispatch.
+An automated intelligence extraction pipeline that scrapes Chinese provincial newspapers every morning, analyses and translates the content with Cloudflare Workers AI (Llama 3.3 70B), clusters same-topic stories from multiple sources, and serves structured English briefings through an interactive Next.js dashboard with daily email dispatch. Sources that block direct fetch are covered by a three-tier strategy: Puppeteer (cron), dedicated fetch scrapers, and RSS feeds via RSSHub for partial coverage.
 
 ## Architecture
 
@@ -25,10 +25,16 @@ An automated intelligence extraction pipeline that scrapes Chinese provincial ne
                                             │  Tier 2 — Fetch Engine            │
                                             │  ├─ Guangxi: epaper API scraper   │
                                             │  ├─ Hainan:  static HTML parser   │
-                                            │  └─ Others:  HTMLRewriter generic │
+                                            │  ├─ Others:  HTMLRewriter generic │
+                                            │  │   (returns [] for JS SPAs)     │
+                                            │  └─ RSS (RSSHub fallback)         │
+                                            │     ├─ Hunan:   /hnrb             │
+                                            │     └─ Nanfang: /southcn/...      │
+                                            │        title + excerpt only       │
+                                            │        parse_type = 'rss'         │
                                             └───────────┬──────────────────────┘
                                                         │  ScrapedArticle[]
-                                                        │  (~33 articles via fetch)
+                                                        │  (~33 full + RSS excerpts)
                                             ┌───────────▼──────────────────────┐
                                             │     AI PASS 1 — FILTER            │
                                             │                                   │
@@ -111,7 +117,7 @@ Full headless Chromium via Cloudflare Browser Rendering. Navigates each source's
 
 ### Tier 2 — Fetch Engine (HTTP trigger + cron fallback)
 
-Native `fetch()` + `HTMLRewriter` — no npm dependency, no browser, no quota.
+Native `fetch()` + `HTMLRewriter` — no npm dependency, no browser, no quota. Runs in parallel: dedicated scrapers for Guangxi and Hainan, generic HTMLRewriter for the remaining three (Yunnan, Sichuan, Fujian — all return `[]` due to JS rendering or 403), and RSS scrapers for Hunan and Nanfang.
 
 #### What the fetch engine can scrape
 
@@ -119,13 +125,27 @@ Native `fetch()` + `HTMLRewriter` — no npm dependency, no browser, no quota.
 |---|---|---|
 | **Guangxi Daily** | Dedicated API scraper ✅ | Fetches the epaper index (`ssw.gxrb.com.cn/json/interface/epaper/api.php?`), extracts article links from inline `<area>` map tags (`code` + `xuhao` params), fetches each article individually. Skips editor credits (`责任编辑`, `客户端`, `版责`, `广西云`). Yields **~19 articles** per run. |
 | **Hainan Daily** | Static HTML parser ✅ | Fetches the node page (`node_58471.htm`), parses inline JS `var map_NODE = { l: ["content_*.htm"] }` to get article file list, fetches each file. Yields **~14 articles** per run. |
+| **Hunan Daily** | RSS (RSSHub `/hnrb`) ✅ | Title + RSS excerpt only — no full body text. Stored with `parse_type = 'rss'`. Dashboard shows amber **RSS** badge and prominent source link. |
+| **Nanfang Daily** | RSS (RSSHub `/southcn/nfapp/column/38`) ✅ | Title + RSS excerpt only. Same RSS treatment as Hunan Daily. |
 | **Yunnan Daily** | Generic HTMLRewriter ❌ | Returns HTTP 403 — server blocks non-browser requests regardless of UA spoofing. Puppeteer only. |
 | **Sichuan Daily** | Generic HTMLRewriter ❌ | JS-rendered SPA — `fetch()` receives a shell with `<noscript>` content only. Puppeteer only. |
-| **Hunan Daily** | Generic HTMLRewriter ❌ | Vue SPA — same issue as Sichuan. Puppeteer only. |
 | **Fujian Daily** | Generic HTMLRewriter ❌ | JS-rendered — returns ~22 chars of usable text. Puppeteer only. |
-| **Nanfang Daily** | Generic HTMLRewriter ❌ | JS-rendered SPA — returns 0 usable chars. Puppeteer only. |
 
-When only the fetch engine runs (HTTP trigger or Puppeteer failure), Guangxi + Hainan provide **~33 real articles** — sufficient for daily briefings. The 5 remaining sources are covered by tomorrow's cron.
+When only the fetch engine runs (HTTP trigger or Puppeteer failure), Guangxi + Hainan provide **~33 full articles** plus Hunan and Nanfang via RSS. The 3 remaining sources (Yunnan, Sichuan, Fujian) are covered by tomorrow's cron.
+
+#### RSS scraper
+
+RSS sources use a shared `scrapeRss()` function:
+- Tries `rsshub.rssforever.com` first, then `rsshub.app` as fallback
+- 8-second timeout per attempt — fails gracefully with `[]` if both instances are unreachable
+- Parses RSS 2.0 and Atom feeds; handles `<![CDATA[...]]>` wrappers and inline HTML in descriptions
+- Articles stored with `parse_type = 'rss'` in both `temp_articles` and `intel_articles`
+- Pass 2 analysis runs normally on important RSS articles — the AI translates and summarises the excerpt it receives; `full_text_en` reflects that limited input
+
+**Dashboard treatment of RSS articles:**
+- Amber **RSS** badge visible in Today's Feed, Intel Briefing drawer, and Archive cards
+- Instead of "Full Translation" block, the drawer shows an amber notice box explaining the limitation plus a "Read full article →" link to the original source
+- Users can use the source link + browser built-in translate (e.g. Chrome's page translate) to read the complete Chinese original
 
 #### Text extraction
 
@@ -281,13 +301,13 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 
 | Paper | Province | Fetch engine | Puppeteer |
 |---|---|---|---|
-| Guangxi Daily | Guangxi | ✅ ~19 articles via epaper API | ✅ |
-| Hainan Daily | Hainan | ✅ ~14 articles via static HTML | ✅ |
+| Guangxi Daily | Guangxi | ✅ ~19 articles (full text) via epaper API | ✅ |
+| Hainan Daily | Hainan | ✅ ~14 articles (full text) via static HTML | ✅ |
+| Hunan Daily | Hunan | ⚡ RSS via RSSHub `/hnrb` (title + excerpt) | ✅ |
+| Nanfang Daily | Guangdong | ⚡ RSS via RSSHub `/southcn/nfapp/column/38` (title + excerpt) | ✅ |
 | Yunnan Daily | Yunnan | ❌ 403 Forbidden | ✅ |
 | Sichuan Daily | Sichuan | ❌ JS-rendered SPA | ✅ |
-| Hunan Daily | Hunan | ❌ Vue SPA | ✅ |
 | Fujian Daily | Fujian | ❌ JS-rendered | ✅ |
-| Nanfang Daily | Guangdong | ❌ JS-rendered SPA | ✅ |
 
 ---
 
@@ -307,6 +327,7 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 | `is_important` | INTEGER | 0 = skipped by filter, 1 = sent to Pass 2 |
 | `importance_reason` | TEXT | One-sentence AI explanation for the decision |
 | `cluster_id` | INTEGER | FK → intel_clusters; set after Pass 3 for important articles |
+| `parse_type` | TEXT | `'full'` = complete body scraped; `'rss'` = RSS title + excerpt only |
 | `created_at` | TEXT | `datetime('now')` default |
 
 ### `intel_clusters` — one row per story cluster
@@ -346,6 +367,7 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 | `category` | TEXT | Political / Military / Economic / Technology / Social / Foreign Affairs |
 | `source` | TEXT | Paper name |
 | `is_preserved` | INTEGER | 0 = normal, 1 = exempt from 30-day cleanup |
+| `parse_type` | TEXT | `'full'` = complete body scraped; `'rss'` = RSS title + excerpt only |
 | `created_at` | TEXT | `datetime('now')` default |
 
 ---
@@ -356,7 +378,7 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 |---|---|
 | **Cluster cards** | One card per story — synthesised headline, combined summary, multi-source badge, category + HIGH indicators |
 | **Publisher perspectives drawer** | Slide-in panel showing each source's own title, summary, full translation, 中文 source toggle, and per-article preserve |
-| **Today's Feed** | All scraped articles grouped by source, ✓/— badges with AI reasoning for each filter decision; important articles show "View Full Analysis" button opening the cluster drawer directly |
+| **Today's Feed** | All scraped articles grouped by source, ✓/— badges with AI reasoning for each filter decision; important articles show "View Full Analysis" button opening the cluster drawer directly; RSS-only articles display an amber **RSS** badge |
 | **Preserve / Delete** | Cluster-level (all articles in cluster) with per-article override in drawer; preserved articles exempt from cleanup |
 | **Archive** | Dedicated view of all preserved articles across all dates |
 | **Search** | Two search bars (sidebar bottom + briefing header) share identical behaviour: typing filters the sidebar nav live for quick orientation; pressing **Enter** or clicking **Search** commits the query and opens a dedicated results page showing all matching clusters across **all dates**, grouped by date (newest first); supports title, summary, source, and **category tag** matching (e.g. search `military`, `political`); clearing returns to the previous view |
@@ -402,7 +424,11 @@ chinese-intel-pipeline/
 │   │   │   ├── scrapeGuangxi()          Epaper API scraper — index → article links → individual fetch
 │   │   │   ├── scrapeHainan()           Static HTML parser — node page JS var → content files → fetch
 │   │   │   ├── scrapeGeneric()          HTMLRewriter fallback — returns [] for JS-rendered pages
-│   │   │   ├── fetchAndParseSources()   Orchestrates all fetch scrapers in parallel
+│   │   │   ├── xmlText()               Extract text from XML tag; handles CDATA wrappers
+│   │   │   ├── stripHtml()             Strip HTML tags from RSS description strings
+│   │   │   ├── parseRssXml()           Parse RSS 2.0 / Atom feed XML → ScrapedArticle[] with parse_type='rss'
+│   │   │   ├── scrapeRss()             Fetch RSSHub feed with 8s timeout; tries RSSHUB_INSTANCES in order
+│   │   │   ├── fetchAndParseSources()   Orchestrates all fetch + RSS scrapers in parallel
 │   │   │   ├── scrapeUrl()              Puppeteer per-source scraper (cron path only)
 │   │   │   ├── extractAiText()          Shared helper — handles both Workers AI response envelopes
 │   │   │   ├── extractJsonArray()       Shared helper — finds best JSON array in raw AI text
@@ -445,6 +471,12 @@ npx wrangler d1 create intel_briefings_db
 cd scraper-worker
 npx wrangler d1 migrations apply intel_briefings_db --remote
 ```
+
+> **Existing deployment:** if you already have the database, just run the migration to add the `parse_type` column to both tables:
+> ```bash
+> npx wrangler d1 migrations apply intel_briefings_db --remote
+> ```
+> Migration `0007_add_parse_type.sql` is idempotent — existing rows keep `DEFAULT 'full'` and no data is lost.
 
 ### 2. Set Worker secrets
 

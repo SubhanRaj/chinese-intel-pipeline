@@ -21,6 +21,7 @@ export const intelArticles = sqliteTable('intel_articles', {
 	source: text('source'),
 	isPreserved: integer('is_preserved').default(0),
 	clusterId: integer('cluster_id'),
+	parseType: text('parse_type').default('full'),
 	createdAt: text('created_at').default(sql`(datetime('now'))`),
 });
 
@@ -45,6 +46,7 @@ export const tempArticles = sqliteTable('temp_articles', {
 	isImportant: integer('is_important').default(0),
 	importanceReason: text('importance_reason'),
 	clusterId: integer('cluster_id'),
+	parseType: text('parse_type').default('full'),
 	createdAt: text('created_at').default(sql`(datetime('now'))`),
 });
 

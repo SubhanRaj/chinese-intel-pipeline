@@ -186,14 +186,122 @@ async function scrapeGeneric(url: string, sourceName: string): Promise<ScrapedAr
 	return [{ title, full_text: text, url, source: sourceName }];
 }
 
+// ---------- RSS scraper ----------
+// Used for JS-rendered sources that block fetch but publish RSS/Atom feeds via RSSHub.
+// Falls back gracefully (returns []) if the feed is unreachable or unparseable.
+// Confirmed routes (via https://rsshub.rssforever.com):
+//   Hunan Daily  → /hnrb
+//   Nanfang Daily → /southcn/nfapp/column/38  (Guangdong general column)
+
+const RSSHUB_INSTANCES = [
+	'https://rsshub.rssforever.com',
+	'https://rsshub.app',
+];
+
+interface RssConfig {
+	name: string;   // must match Source.name exactly
+	path: string;   // RSSHub route path e.g. /hnrb
+}
+
+const RSS_CONFIGS: RssConfig[] = [
+	{ name: 'Hunan Daily',   path: '/hnrb' },
+	{ name: 'Nanfang Daily', path: '/southcn/nfapp/column/38' },
+];
+
+// Extract text from an XML tag, handling CDATA wrappers.
+function xmlText(xml: string, tag: string): string {
+	const re = new RegExp(`<${tag}[^>]*>\\s*(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?\\s*</${tag}>`, 'i');
+	return (xml.match(re)?.[1] ?? '').trim();
+}
+
+// Strip HTML tags from a string (RSS descriptions often contain markup).
+function stripHtml(html: string): string {
+	return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function parseRssXml(xml: string, sourceName: string): ScrapedArticle[] {
+	const articles: ScrapedArticle[] = [];
+	// Match both <item> (RSS) and <entry> (Atom)
+	const itemRe = /<(?:item|entry)[^>]*>([\s\S]*?)<\/(?:item|entry)>/g;
+
+	for (const m of xml.matchAll(itemRe)) {
+		const item = m[1];
+		const rawTitle = xmlText(item, 'title');
+		// Atom uses <link href="…"/> or <link>…</link>; RSS uses <link>…</link>
+		const link =
+			(item.match(/<link[^>]+href=["']([^"']+)["']/i)?.[1]) ||
+			xmlText(item, 'link') ||
+			xmlText(item, 'guid');
+		// RSS uses <description>; Atom uses <summary> or <content>
+		const desc =
+			xmlText(item, 'description') ||
+			xmlText(item, 'summary') ||
+			xmlText(item, 'content');
+
+		const title = stripHtml(rawTitle);
+		if (!title || !link) continue;
+
+		articles.push({
+			title,
+			full_text: stripHtml(desc),
+			url: link,
+			source: sourceName,
+			parseType: 'rss',
+		});
+	}
+
+	return articles.slice(0, 20);
+}
+
+async function scrapeRss(config: RssConfig): Promise<ScrapedArticle[]> {
+	for (const instance of RSSHUB_INSTANCES) {
+		const url = `${instance}${config.path}`;
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), 8_000);
+		try {
+			const res = await fetch(url, {
+				signal: controller.signal,
+				headers: {
+					'User-Agent': 'Mozilla/5.0 (compatible; RSSReader/1.0)',
+					'Accept': 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
+				},
+			});
+			clearTimeout(timer);
+			if (!res.ok) {
+				console.warn(`[RSS] ${config.name}: ${instance} returned ${res.status}`);
+				continue;
+			}
+			const xml = await res.text();
+			const articles = parseRssXml(xml, config.name);
+			if (articles.length === 0) {
+				console.warn(`[RSS] ${config.name}: ${instance} — feed parsed but no items found`);
+				continue;
+			}
+			console.log(`[RSS] ${config.name}: ${articles.length} items via ${instance}`);
+			return articles;
+		} catch (err) {
+			clearTimeout(timer);
+			console.warn(`[RSS] ${config.name}: ${instance} failed — ${(err as Error).message}`);
+		}
+	}
+	console.warn(`[RSS] ${config.name}: all instances failed — skipping`);
+	return [];
+}
+
 async function fetchAndParseSources(sources: Source[], yyyy: string, mm: string, dd: string): Promise<ScrapedArticle[]> {
+	// Sources with dedicated scrapers get those; the rest get the generic HTMLRewriter fallback
+	// (which silently returns [] for JS-rendered SPAs). RSS scrapers run in parallel for the
+	// sources that have confirmed RSSHub routes and no working fetch strategy.
+	const rssSourceNames = new Set(RSS_CONFIGS.map(c => c.name));
 	const results = await Promise.allSettled([
 		scrapeGuangxi(yyyy, mm, dd),
 		scrapeHainan(sources.find(s => s.name === 'Hainan Daily')!.url),
-		// Generic fallback for the rest — will silently return [] for JS-rendered ones
+		// Generic fetch fallback for sources without a dedicated scraper or RSS route
 		...sources
-			.filter(s => s.name !== 'Guangxi Daily' && s.name !== 'Hainan Daily')
+			.filter(s => s.name !== 'Guangxi Daily' && s.name !== 'Hainan Daily' && !rssSourceNames.has(s.name))
 			.map(s => scrapeGeneric(s.url, s.name)),
+		// RSS fallback for JS-rendered sources with confirmed RSSHub routes
+		...RSS_CONFIGS.map(cfg => scrapeRss(cfg)),
 	]);
 	return results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
 }
@@ -207,6 +315,7 @@ interface ScrapedArticle {
 	full_text: string;
 	url: string;
 	source: string;
+	parseType?: 'full' | 'rss';
 }
 
 async function scrapeUrl(browser: Browser, startUrl: string, sourceName: string): Promise<ScrapedArticle[]> {
@@ -726,6 +835,7 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 			source: scraped.source,
 			isImportant: decision?.important ? 1 : 0,
 			importanceReason: decision?.reason ?? null,
+			parseType: scraped.parseType ?? 'full',
 		});
 	}
 	console.log(`Stored ${scrapedArticles.length} articles in temp_articles.`);
@@ -803,6 +913,7 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 				source: scraped.source ?? null,
 				isPreserved: 0,
 				clusterId,
+				parseType: scraped.parseType ?? 'full',
 			});
 		}
 	}
