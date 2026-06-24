@@ -136,10 +136,10 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 		setSearchInput(trimmed);
 	};
 
-	const clearSearch = () => {
+	const clearSearch = (returnToPrev = false) => {
 		setSearchInput('');
 		setSearchQuery('');
-		setView(preSearchView);
+		if (returnToPrev) setView(preSearchView);
 	};
 
 	const persistSelectedId = (id: number | null) => {
@@ -419,7 +419,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 							{(searchInput || searchQuery) && (
 								<button
 									type="button"
-									onClick={clearSearch}
+									onClick={() => clearSearch(true)}
 									className="absolute right-9 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
 								>
 									<IconX size={13} />
@@ -531,7 +531,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 											<div className="relative flex-1">
 												<IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
 												<input type="text" value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search again…" className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors" />
-												{(searchInput || searchQuery) && <button type="button" onClick={clearSearch} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><IconX size={13} /></button>}
+												{(searchInput || searchQuery) && <button type="button" onClick={() => clearSearch(true)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><IconX size={13} /></button>}
 											</div>
 											<button type="submit" className="shrink-0 px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors">Search</button>
 										</div>
@@ -751,7 +751,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 												<div className="relative flex-1">
 													<IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
 													<input type="text" value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search all articles, categories… (Enter)" className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors" />
-													{(searchInput || searchQuery) && <button type="button" onClick={clearSearch} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><IconX size={13} /></button>}
+													{(searchInput || searchQuery) && <button type="button" onClick={() => clearSearch(true)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><IconX size={13} /></button>}
 												</div>
 												<button type="submit" className="shrink-0 px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors">Search</button>
 											</div>
