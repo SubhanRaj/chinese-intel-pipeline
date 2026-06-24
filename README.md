@@ -359,7 +359,8 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 | **Today's Feed** | All scraped articles grouped by source, ✓/— badges with AI reasoning for each filter decision; important articles show "View Full Analysis" button opening the cluster drawer directly |
 | **Preserve / Delete** | Cluster-level (all articles in cluster) with per-article override in drawer; preserved articles exempt from cleanup |
 | **Archive** | Dedicated view of all preserved articles across all dates |
-| **Search** | Live client-side filter across title, summary, source |
+| **Sidebar search** | Filters sidebar entries (Preserved, Today's Feed, Briefings) by title or date in real time; clicking a result carries the query into the main search view |
+| **Global search view** | Typing in the search bar (or activating via sidebar) opens a dedicated results page showing matching clusters across **all briefing dates** — not just the selected one; clearing the query returns to the previous view |
 | **Print Briefing** | `window.print()` with sidebar hidden |
 | **Dark / light mode** | Toggle in sidebar header; high-contrast light mode with WCAG AA compliant text colours; preference persists via `localStorage` across sessions |
 | **State persistence** | Active view (Feed / Briefing / Preserved), selected briefing date, and sidebar open state restored on refresh via `sessionStorage` |
@@ -469,6 +470,8 @@ curl https://scraper-worker.shubhanraj2002.workers.dev
 ```
 
 Runs the full three-pass pipeline via fetch engine only (Guangxi + Hainan, ~33 articles). The dashboard will show Today's Feed, Intel Briefing clusters, and send an email if `ENABLE_EMAIL=true`. The first cron run at 01:30 UTC will execute the Puppeteer path across all 7 sources.
+
+**Re-running curl after a deploy:** safe to do — curl bypasses idempotency so it always executes a fresh scrape and AI run regardless of whether today's date already has data. Existing briefing/cluster rows for that date are upserted (overwritten), not duplicated. Re-run whenever you deploy scraper changes and want to validate the new AI behaviour immediately without waiting for the next cron.
 
 ---
 
