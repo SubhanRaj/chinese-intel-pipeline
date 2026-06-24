@@ -45,6 +45,58 @@ function buildSources(yyyy: string, mm: string, dd: string): Source[] {
 	];
 }
 
+// ---------- fetch+HTMLRewriter fallback scraper ----------
+
+async function fetchAndParseSource(url: string, sourceName: string): Promise<ScrapedArticle[]> {
+	try {
+		const response = await fetch(url, {
+			headers: {
+				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+				'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+				'Referer': new URL(url).origin + '/',
+			},
+			redirect: 'follow',
+		});
+
+		if (!response.ok) {
+			console.warn(`[FETCH FALLBACK] ${sourceName}: HTTP ${response.status} for ${url}`);
+			return [];
+		}
+
+		let pageTitle = '';
+		const textChunks: string[] = [];
+
+		const transformed = new HTMLRewriter()
+			.on('title', { text(chunk) { pageTitle += chunk.text; } })
+			.on('h1, h2, h3, h4, p, article, .content, .article-content, .news-content, .article-body', {
+				text(chunk) { if (chunk.text.trim()) textChunks.push(chunk.text.trim()); },
+			})
+			.transform(response);
+
+		await transformed.text(); // drain stream to trigger handlers
+
+		const fullText = textChunks.join('\n').trim();
+		if (fullText.length < 100) {
+			console.warn(`[FETCH FALLBACK] ${sourceName}: too little text (${fullText.length} chars) — likely JS-rendered`);
+			return [];
+		}
+
+		console.log(`[FETCH FALLBACK] ${sourceName}: extracted ${fullText.length} chars`);
+		return [{ title: pageTitle.trim() || url, full_text: fullText, url, source: sourceName }];
+	} catch (err) {
+		console.error(`[FETCH FALLBACK ERROR] ${sourceName}:`, err);
+		return [];
+	}
+}
+
+async function fetchAndParseSources(sources: Source[]): Promise<ScrapedArticle[]> {
+	const results = await Promise.allSettled(
+		sources.map(({ url, name }) => fetchAndParseSource(url, name)),
+	);
+	return results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+}
+
 // ---------- puppeteer helpers ----------
 
 type Browser = Awaited<ReturnType<typeof puppeteer.launch>>;
@@ -273,19 +325,32 @@ async function runPipeline(env: Env): Promise<string> {
 	}
 
 	const sources = buildSources(yyyy, mm, dd);
-	const browser = await puppeteer.launch(env.BROWSER);
-	const scrapedArticles: ScrapedArticle[] = [];
-	for (const { url, name } of sources) {
-		const arts = await scrapeUrl(browser, url, name);
-		scrapedArticles.push(...arts);
+	let scrapedArticles: ScrapedArticle[] = [];
+	let scrapeMode = 'puppeteer';
+
+	try {
+		console.log('Attempting Puppeteer (Cloudflare Browser Rendering) scrape…');
+		const browser = await puppeteer.launch(env.BROWSER);
+		for (const { url, name } of sources) {
+			const arts = await scrapeUrl(browser, url, name);
+			scrapedArticles.push(...arts);
+		}
+		try { await browser.close(); } catch { /* browser may already be closed on crash */ }
+		console.log(`Puppeteer scrape succeeded: ${scrapedArticles.length} articles.`);
+	} catch (puppeteerErr) {
+		console.warn(`Puppeteer failed (${(puppeteerErr as Error).message}). Falling back to fetch+HTMLRewriter…`);
+		scrapeMode = 'fetch-fallback';
+		scrapedArticles = await fetchAndParseSources(sources);
+		console.log(`Fetch fallback yielded ${scrapedArticles.length} articles.`);
 	}
-	await browser.close();
 
 	if (scrapedArticles.length === 0) {
-		const msg = `No articles scraped for ${trackingDate} — all sources may be unavailable.`;
+		const msg = `No articles scraped for ${trackingDate} — both Puppeteer and fetch fallback returned nothing.`;
 		console.warn(msg);
 		return msg;
 	}
+
+	console.log(`Scrape mode: ${scrapeMode} — ${scrapedArticles.length} total articles.`);
 
 	console.log(`Scraped ${scrapedArticles.length} articles. Sending to Workers AI for analysis…`);
 
