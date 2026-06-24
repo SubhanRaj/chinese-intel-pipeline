@@ -143,6 +143,23 @@
   --muted-foreground: oklch(0.42 0 0);
 }
 
+/* Warm beige/cream tint on all light-mode surfaces */
+html:not(.dark) {
+  background-color: oklch(0.972 0.013 78);
+}
+html:not(.dark) .bg-white {
+  background-color: oklch(0.988 0.009 78) !important;
+}
+html:not(.dark) .bg-slate-50 {
+  background-color: oklch(0.978 0.011 78) !important;
+}
+html:not(.dark) .bg-slate-100 {
+  background-color: oklch(0.963 0.014 78) !important;
+}
+html:not(.dark) .border-slate-200 {
+  border-color: oklch(0.91 0.014 78) !important;
+}
+
 /* Paper/matte texture on light theme */
 html:not(.dark)::after {
   content: '';
