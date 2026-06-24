@@ -503,19 +503,13 @@ async function sendEmail(
 
 // ---------- shared pipeline ----------
 
-interface PipelineOptions {
-	fetchOnly?: boolean; // skip Puppeteer entirely — safe for testing, no Browser Rendering quota
-	force?: boolean;     // bypass idempotency check — re-run even if today already processed
-}
-
-async function runPipeline(env: Env, opts: PipelineOptions = {}): Promise<string> {
-	const { fetchOnly = false, force = false } = opts;
+async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 	const { yyyy, mm, dd } = getCSTDateParts();
 	const trackingDate = `${yyyy}-${mm}-${dd}`;
 	const db = drizzle(env.DB);
 
-	// Idempotency check (skipped when force=true)
-	if (!force) {
+	// Idempotency: only enforce on cron runs. HTTP (fetch-only) test runs always proceed.
+	if (!fetchOnly) {
 		const existing = await db
 			.select()
 			.from(intelBriefings)
@@ -523,7 +517,7 @@ async function runPipeline(env: Env, opts: PipelineOptions = {}): Promise<string
 			.limit(1);
 
 		if (existing.length > 0 && existing[0].aiAnalysisMarkdown) {
-			const msg = `Already processed ${trackingDate}, skipping. Pass ?force=1 to re-run.`;
+			const msg = `Already processed ${trackingDate}, skipping.`;
 			console.log(msg);
 			return msg;
 		}
@@ -662,20 +656,20 @@ async function runPipeline(env: Env, opts: PipelineOptions = {}): Promise<string
 // ---------- handlers ----------
 
 export default {
-	async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+	// HTTP trigger: fetch engine only — never touches Browser Rendering quota.
+	// Use this for manual testing: curl https://scraper-worker.shubhanraj2002.workers.dev
+	async fetch(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
 		try {
-			const url = new URL(request.url);
-			const fetchOnly = url.searchParams.get('fetch-only') === '1';
-			const force = url.searchParams.get('force') === '1';
-			const result = await runPipeline(env, { fetchOnly, force });
+			const result = await runPipeline(env, true);
 			return new Response(result, { status: 200 });
 		} catch (error) {
 			return new Response(`Pipeline error: ${(error as Error).message}`, { status: 500 });
 		}
 	},
 
+	// Cron trigger: Puppeteer first → fetch fallback. Idempotency enforced.
 	async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
 		console.log('Cron trigger fired. Starting pipeline…');
-		await runPipeline(env);
+		await runPipeline(env, false);
 	},
 };
