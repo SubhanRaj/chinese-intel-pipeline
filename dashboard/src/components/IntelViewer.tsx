@@ -78,6 +78,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 	const [preservedDrawer, setPreservedDrawer] = useState<IntelArticle | null>(null);
 	const [view, setView] = useState<View>('briefing');
 	const [searchQuery, setSearchQuery] = useState('');
+	const [sidebarSearch, setSidebarSearch] = useState('');
 	const [, startTransition] = useTransition();
 	const [hydrated, setHydrated] = useState(false);
 
@@ -245,7 +246,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 					</div>
 				</div>
 
-				<nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
+				<nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4 min-h-0">
 					{/* ── Preserved ── */}
 					{preservedArticles.length > 0 && (
 						<div>
@@ -316,7 +317,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 								No briefings on record yet.
 							</p>
 						) : (
-							briefings.map(b => {
+							briefings.filter(b => !sidebarSearch || b.trackingDate.includes(sidebarSearch)).map(b => {
 								const isActive = selectedId === b.id && view === 'briefing';
 								return (
 									<button
@@ -339,8 +340,26 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 					</div>
 				</nav>
 
-				<div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800">
-					<p className="text-sm text-slate-600 dark:text-slate-400">
+				<div className="shrink-0 px-3 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+					<div className="relative">
+						<IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+						<input
+							type="text"
+							value={sidebarSearch}
+							onChange={e => setSidebarSearch(e.target.value)}
+							placeholder="Search dates…"
+							className="w-full pl-8 pr-7 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors"
+						/>
+						{sidebarSearch && (
+							<button
+								onClick={() => setSidebarSearch('')}
+								className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+							>
+								<IconX size={13} />
+							</button>
+						)}
+					</div>
+					<p className="text-[11px] text-slate-400 dark:text-slate-600 mt-1.5 px-1">
 						{briefings.length} briefing{briefings.length !== 1 ? 's' : ''} on record
 					</p>
 				</div>
@@ -549,7 +568,9 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 																	<IconArticle size={14} />
 																	View Full Analysis
 																</button>
-															) : null}
+															) : (
+																<span className="text-sm text-slate-400 dark:text-slate-600 italic">Not yet analysed</span>
+															)}
 															{safeUrl(a.url) && (
 																<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-slate-400 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 transition-colors py-0.5">
 																	<IconExternalLink size={13} />
