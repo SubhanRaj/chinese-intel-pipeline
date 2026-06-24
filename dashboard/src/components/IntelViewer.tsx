@@ -174,10 +174,10 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 						<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-1">
 							Intelligence Monitor
 						</p>
-						<h1 className="text-base font-semibold text-slate-900 dark:text-slate-100 leading-snug tracking-tight">
+						<h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100 leading-snug tracking-tight">
 							Chinese Provincial Press
 						</h1>
-						<p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Daily briefings · CST</p>
+						<p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Daily briefings · CST</p>
 					</div>
 					<div className="flex items-center gap-1">
 						<button
@@ -210,8 +210,8 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 										: 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
 								].join(' ')}
 							>
-								<span className="text-[10px] font-bold tracking-widest uppercase text-amber-600 dark:text-amber-500 flex items-center gap-1.5">
-									<IconBookmarkFilled size={11} />
+								<span className="text-sm font-bold tracking-widest uppercase text-amber-600 dark:text-amber-500 flex items-center gap-1.5">
+									<IconBookmarkFilled size={12} />
 									Preserved ({preservedArticles.length})
 								</span>
 								<IconChevronRight size={11} className="text-amber-500" />
@@ -220,12 +220,12 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 								<button
 									key={a.id}
 									onClick={() => { setPreservedDrawer(a); setSidebarOpen(false); }}
-									className="w-full text-left rounded-lg px-3 py-2 mb-0.5 flex items-start gap-2.5 transition-all duration-100 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 group"
+									className="w-full text-left rounded-lg px-3 py-2 mb-0.5 flex items-start gap-2.5 transition-all duration-100 text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 group"
 								>
 									<IconBookmark size={13} className="shrink-0 mt-0.5 text-amber-500" />
 									<div className="flex-1 min-w-0">
-										<p className="text-xs font-medium leading-snug truncate">{a.title ?? 'Untitled'}</p>
-										<p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">{a.trackingDate}</p>
+										<p className="text-sm font-medium leading-snug truncate text-slate-800 dark:text-slate-200">{a.title ?? 'Untitled'}</p>
+										<p className="text-[11px] text-slate-500 dark:text-slate-500 font-mono mt-0.5">{a.trackingDate}</p>
 									</div>
 									<IconChevronRight size={11} className="shrink-0 mt-1 opacity-0 group-hover:opacity-100 text-slate-400 transition-opacity" />
 								</button>
@@ -246,8 +246,8 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 										: 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
 								].join(' ')}
 							>
-								<span className="text-[10px] font-bold tracking-widest uppercase text-emerald-600 dark:text-emerald-500 flex items-center gap-1.5">
-									<IconLayoutGrid size={11} />
+								<span className="text-sm font-bold tracking-widest uppercase text-emerald-600 dark:text-emerald-500 flex items-center gap-1.5">
+									<IconLayoutGrid size={12} />
 									Today's Feed ({todayFeed.length})
 								</span>
 								<IconChevronRight size={11} className="text-emerald-500" />
@@ -259,7 +259,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 					{/* ── Briefings list ── */}
 					<div>
 						{briefings.length > 0 && (
-							<p className="px-3 mb-1 text-[10px] font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500">
+							<p className="px-3 mb-1 text-sm font-bold tracking-widest uppercase text-slate-600 dark:text-slate-400">
 								Briefings
 							</p>
 						)}
@@ -278,11 +278,11 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 											'w-full text-left rounded-lg px-3 py-2.5 mb-0.5 flex items-center gap-3 transition-all duration-100',
 											isActive
 												? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
-												: 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200',
+												: 'text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200',
 										].join(' ')}
 									>
-										<IconCalendar size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
-										<span className="flex-1 text-sm font-mono font-medium tracking-wide">{b.trackingDate}</span>
+										<IconCalendar size={16} className="shrink-0 text-slate-500 dark:text-slate-500" />
+										<span className="flex-1 text-base font-mono font-medium tracking-wide">{b.trackingDate}</span>
 										{isActive && <IconChevronRight size={13} className="text-red-600 dark:text-red-500 shrink-0" />}
 									</button>
 								);
@@ -292,7 +292,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 				</nav>
 
 				<div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800">
-					<p className="text-xs text-slate-500 dark:text-slate-500">
+					<p className="text-sm text-slate-600 dark:text-slate-400">
 						{briefings.length} briefing{briefings.length !== 1 ? 's' : ''} on record
 					</p>
 				</div>
@@ -392,7 +392,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 									Preserved Articles
 								</p>
 								<h2 className="font-serif text-4xl text-slate-900 dark:text-slate-100 tracking-tight">Archive</h2>
-								<p className="text-sm text-slate-500 dark:text-slate-400 mt-3">
+								<p className="text-sm text-slate-600 dark:text-slate-400 mt-3">
 									{preservedArticles.length} article{preservedArticles.length !== 1 ? 's' : ''} preserved · exempt from 30-day cleanup
 								</p>
 								<div className="mt-4">{searchBar}</div>
@@ -432,7 +432,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 								<h2 className="font-serif text-4xl text-slate-900 dark:text-slate-100 tracking-tight">
 									{feedDate ?? '—'}
 								</h2>
-								<p className="text-sm text-slate-500 dark:text-slate-400 mt-3">
+								<p className="text-sm text-slate-600 dark:text-slate-400 mt-3">
 									All {todayFeed.length} scraped articles · titles AI-translated ·{' '}
 									<span className="text-emerald-600 dark:text-emerald-400 font-medium">
 										{todayFeed.filter(a => a.isImportant).length} flagged for full analysis
@@ -446,11 +446,11 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 							{Object.entries(feedBySource).map(([source, arts]) => (
 								<div key={source} className="mb-8">
 									<div className="flex items-center gap-3 mb-3">
-										<h3 className="text-xs font-bold tracking-widest uppercase text-slate-500 dark:text-slate-400">
+										<h3 className="text-sm font-bold tracking-widest uppercase text-slate-600 dark:text-slate-400">
 											{source}
 										</h3>
 										<div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
-										<span className="text-[10px] font-mono text-slate-400">{arts.length} articles</span>
+										<span className="text-[11px] font-mono text-slate-500">{arts.length} articles</span>
 									</div>
 									<div className="space-y-2">
 										{arts.map(a => (
@@ -467,11 +467,11 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 													)}
 												</div>
 												<div className="flex-1 min-w-0">
-													<p className={['text-sm font-medium leading-snug', a.isImportant ? 'text-slate-900 dark:text-slate-100' : 'text-slate-500 dark:text-slate-500'].join(' ')}>
+													<p className={['text-sm font-medium leading-snug', a.isImportant ? 'text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-500'].join(' ')}>
 														{a.titleEn ?? a.title}
 													</p>
 													{a.importanceReason && (
-														<p className={['text-[11px] mt-1 leading-relaxed', a.isImportant ? 'text-emerald-600 dark:text-emerald-500' : 'text-slate-400 dark:text-slate-600'].join(' ')}>
+														<p className={['text-[11px] mt-1 leading-relaxed', a.isImportant ? 'text-emerald-700 dark:text-emerald-500' : 'text-slate-500 dark:text-slate-600'].join(' ')}>
 															{a.isImportant ? '✓ ' : '— '}{a.importanceReason}
 														</p>
 													)}
@@ -506,7 +506,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 										{selected.trackingDate}
 									</h2>
 									<div className="flex items-center justify-between mt-4 flex-wrap gap-3">
-										<p className="text-sm text-slate-500 dark:text-slate-400">
+										<p className="text-sm text-slate-600 dark:text-slate-400">
 											Chinese Provincial Press Monitor · 7 Sources · CST Morning Edition
 										</p>
 										<Button
@@ -629,7 +629,7 @@ function ClusterCard({ cluster, clusterArticles, onOpen, onPreserveAll, onDelete
 								</span>
 							)}
 							{sources.map(s => (
-								<span key={s} className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{s}</span>
+								<span key={s} className="text-[11px] text-slate-500 dark:text-slate-500 font-mono">{s}</span>
 							))}
 							{isMultiSource && (
 								<span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
@@ -650,7 +650,7 @@ function ClusterCard({ cluster, clusterArticles, onOpen, onPreserveAll, onDelete
 
 			<CardContent className="pt-0 pb-4 space-y-3">
 				{cluster.summary && (
-					<p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2 sm:line-clamp-none">
+					<p className="text-base text-slate-700 dark:text-slate-300 leading-relaxed line-clamp-2 sm:line-clamp-none">
 						{cluster.summary.replace(/\[HIGH\]/g, '').trim()}
 					</p>
 				)}
@@ -748,7 +748,7 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 								</span>
 							)}
 						</div>
-						<p className="text-sm text-slate-500 dark:text-slate-400">
+						<p className="text-sm text-slate-600 dark:text-slate-400">
 							{isMultiSource ? `${sources.join(' · ')} · ${articles.length} perspectives` : (sources[0] ?? '') + ' · English analysis + translation'}
 						</p>
 					</div>
@@ -794,7 +794,7 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 
 							{/* Publisher perspectives */}
 							<div>
-								<p className="text-xs font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-2">
+								<p className="text-sm font-bold tracking-widest uppercase text-slate-600 dark:text-slate-400 mb-4 flex items-center gap-2">
 									<IconBuildings size={12} />
 									{isMultiSource ? `Publisher Perspectives (${articles.length})` : 'Full Article'}
 								</p>
@@ -926,7 +926,7 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 								variant="ghost"
 								size="sm"
 								onClick={() => onDeleteAll(ids)}
-								className="gap-2 text-sm text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+								className="gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
 							>
 								<IconTrash size={15} />
 								Delete cluster
@@ -963,8 +963,8 @@ function ArticleCard({ article, showDate, onPreserve, onDelete, onReadFull }: Ar
 										{article.category}
 									</span>
 								)}
-								{article.source && <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{article.source}</span>}
-								{showDate && <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">· {article.trackingDate}</span>}
+								{article.source && <span className="text-[11px] text-slate-500 dark:text-slate-500 font-mono">{article.source}</span>}
+								{showDate && <span className="text-[11px] text-slate-500 dark:text-slate-500 font-mono">· {article.trackingDate}</span>}
 							</div>
 						)}
 						<CardTitle className="font-serif text-xl text-slate-900 dark:text-slate-100 leading-snug">
@@ -976,7 +976,7 @@ function ArticleCard({ article, showDate, onPreserve, onDelete, onReadFull }: Ar
 			</CardHeader>
 			<CardContent className="pt-0 pb-4 space-y-3">
 				{article.summary && (
-					<p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2 sm:line-clamp-none">
+					<p className="text-base text-slate-700 dark:text-slate-300 leading-relaxed line-clamp-2 sm:line-clamp-none">
 						{article.summary.replace(/\[HIGH\]/g, '').trim()}
 					</p>
 				)}
@@ -990,7 +990,7 @@ function ArticleCard({ article, showDate, onPreserve, onDelete, onReadFull }: Ar
 							Read Full Article
 						</button>
 						{safeUrl(article.url) && (
-							<a href={safeUrl(article.url)!} target="_blank" rel="noopener noreferrer" className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors hover:underline underline-offset-2">
+							<a href={safeUrl(article.url)!} target="_blank" rel="noopener noreferrer" className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors hover:underline underline-offset-2">
 								<IconExternalLink size={14} />
 								Source
 							</a>
@@ -1036,7 +1036,7 @@ function ArticleDrawer({ article, onClose, onPreserve, onUnpreserveAndDelete }: 
 							<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500">Full Article</p>
 							{article?.category && <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full ${categoryStyle(article.category)}`}>{article.category}</span>}
 						</div>
-						<p className="text-sm text-slate-500 dark:text-slate-400">{article?.source ? `${article.source} · ` : ''}English analysis + translation</p>
+						<p className="text-sm text-slate-600 dark:text-slate-400">{article?.source ? `${article.source} · ` : ''}English analysis + translation</p>
 					</div>
 					<div className="flex items-center gap-2">
 						{article?.fullText && (
@@ -1076,17 +1076,17 @@ function ArticleDrawer({ article, onClose, onPreserve, onUnpreserveAndDelete }: 
 							) : (
 								<>
 									<div>
-										<p className="text-xs font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-3">Geopolitical Summary</p>
+										<p className="text-sm font-bold tracking-widest uppercase text-slate-600 dark:text-slate-400 mb-3">Geopolitical Summary</p>
 										<p className="text-base text-slate-700 dark:text-slate-200 leading-relaxed">{article.summary?.replace(/\[HIGH\]/g, '').trim() ?? 'No summary available.'}</p>
 									</div>
 									{article.fullTextEn ? (
 										<div>
-											<p className="text-xs font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-3">Full Article (English Translation)</p>
+											<p className="text-sm font-bold tracking-widest uppercase text-slate-600 dark:text-slate-400 mb-3">Full Article (English Translation)</p>
 											<p className="text-base text-slate-700 dark:text-slate-300 leading-relaxed">{article.fullTextEn}</p>
 										</div>
 									) : (
 										<div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950 px-5 py-4">
-											<p className="text-sm text-slate-500 dark:text-slate-400">Full English translation not available. Toggle to <strong>中文 Source</strong> to read the original.</p>
+											<p className="text-sm text-slate-600 dark:text-slate-400">Full English translation not available. Toggle to <strong>中文 Source</strong> to read the original.</p>
 										</div>
 									)}
 								</>
@@ -1101,7 +1101,7 @@ function ArticleDrawer({ article, onClose, onPreserve, onUnpreserveAndDelete }: 
 							{article.isPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
 							{article.isPreserved ? 'Preserved — click to unpreserve' : 'Preserve'}
 						</Button>
-						<Button variant="ghost" size="sm" onClick={() => onUnpreserveAndDelete(article.id)} className="gap-2 text-sm text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400">
+						<Button variant="ghost" size="sm" onClick={() => onUnpreserveAndDelete(article.id)} className="gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400">
 							<IconTrash size={15} />
 							{article.isPreserved ? 'Unpreserve & Delete' : 'Delete'}
 						</Button>
