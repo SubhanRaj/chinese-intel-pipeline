@@ -480,27 +480,27 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 								<h2 className="font-serif text-4xl text-slate-900 dark:text-slate-100 tracking-tight">
 									{feedDate ?? '—'}
 								</h2>
-								<p className="text-sm text-slate-600 dark:text-slate-400 mt-3">
+								<p className="text-base text-slate-600 dark:text-slate-400 mt-3">
 									All {todayFeed.length} scraped articles · titles AI-translated ·{' '}
 									<span className="text-emerald-600 dark:text-emerald-400 font-medium">
 										{todayFeed.filter(a => a.isImportant).length} flagged for full analysis
 									</span>
 									{' '}· deleted at next morning run
 								</p>
-								<p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+								<p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
 									Click any source link to read the original. AI reasoning shown below each title.
 								</p>
 							</header>
 							{Object.entries(feedBySource).map(([source, arts]) => (
-								<div key={source} className="mb-8">
-									<div className="flex items-center gap-3 mb-3">
-										<h3 className="text-sm font-bold tracking-widest uppercase text-slate-600 dark:text-slate-400">
+								<div key={source} className="mb-10">
+									<div className="flex items-center gap-3 mb-4">
+										<h3 className="text-base font-bold tracking-widest uppercase text-slate-600 dark:text-slate-400">
 											{source}
 										</h3>
 										<div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
-										<span className="text-[11px] font-mono text-slate-500">{arts.length} articles</span>
+										<span className="text-xs font-mono text-slate-500">{arts.length} articles</span>
 									</div>
-									<div className="space-y-2">
+									<div className="space-y-3">
 										{arts.map(a => {
 											// FK first; fallback finds the intel_article row that actually has cluster_id set
 											// (multiple runs create duplicate rows — we want the one with cluster_id, not just first)
@@ -517,52 +517,52 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 											const clusterArticles = matchedCluster ? articles.filter(art => art.clusterId === matchedCluster.id) : [];
 
 											return (
-											<div key={a.id} className={['bg-white dark:bg-slate-900 border rounded-lg px-4 py-3 flex items-start gap-3', a.isImportant ? 'border-emerald-200 dark:border-emerald-800/50' : 'border-slate-200 dark:border-slate-800'].join(' ')}>
-												<div className="mt-0.5 shrink-0">
+											<div key={a.id} className={['bg-white dark:bg-slate-900 border rounded-xl px-4 py-4 sm:px-5 sm:py-4 flex items-start gap-3 sm:gap-4', a.isImportant ? 'border-emerald-200 dark:border-emerald-800/50' : 'border-slate-200 dark:border-slate-800'].join(' ')}>
+												<div className="mt-1 shrink-0">
 													{a.isImportant ? (
-														<span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-															<IconCheck size={11} strokeWidth={2.5} />
+														<span className="flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+															<IconCheck size={13} strokeWidth={2.5} />
 														</span>
 													) : (
-														<span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600">
-															<IconMinus size={11} strokeWidth={2.5} />
+														<span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600">
+															<IconMinus size={13} strokeWidth={2.5} />
 														</span>
 													)}
 												</div>
 												<div className="flex-1 min-w-0">
-													<p className={['text-sm font-medium leading-snug', a.isImportant ? 'text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-500'].join(' ')}>
+													<p className={['text-base font-medium leading-snug', a.isImportant ? 'text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-500'].join(' ')}>
 														{a.titleEn ?? a.title}
 													</p>
 													{a.importanceReason && (
-														<p className={['text-[11px] mt-1 leading-relaxed', a.isImportant ? 'text-emerald-700 dark:text-emerald-500' : 'text-slate-500 dark:text-slate-600'].join(' ')}>
+														<p className={['text-sm mt-1.5 leading-relaxed', a.isImportant ? 'text-emerald-700 dark:text-emerald-500' : 'text-slate-500 dark:text-slate-600'].join(' ')}>
 															{a.isImportant ? '✓ ' : '— '}{a.importanceReason}
 														</p>
 													)}
 													{/* Quick-access row for important articles */}
 													{!!a.isImportant && (
-														<div className="flex items-center gap-3 mt-2">
+														<div className="flex flex-wrap items-center gap-3 mt-2.5">
 															{matchedCluster ? (
 																<button
 																	onClick={() => setDrawer({ cluster: matchedCluster, articles: clusterArticles })}
-																	className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+																	className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors py-0.5"
 																>
-																	<IconArticle size={12} />
+																	<IconArticle size={14} />
 																	View Full Analysis
 																</button>
 															) : null}
 															{safeUrl(a.url) && (
-																<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 transition-colors">
-																	<IconExternalLink size={11} />
+																<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-slate-400 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 transition-colors py-0.5">
+																	<IconExternalLink size={13} />
 																	Source
 																</a>
 															)}
 														</div>
 													)}
 												</div>
-												{/* For skipped articles, show the source link on the right as before */}
+												{/* For skipped articles, show the source link on the right */}
 												{!a.isImportant && safeUrl(a.url) && (
-													<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-0.5 text-slate-300 dark:text-slate-700 hover:text-blue-500 dark:hover:text-blue-400 transition-colors" title="Open original article">
-														<IconExternalLink size={14} />
+													<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-1 p-1.5 -mr-1 text-slate-300 dark:text-slate-700 hover:text-blue-500 dark:hover:text-blue-400 transition-colors" title="Open original article">
+														<IconExternalLink size={16} />
 													</a>
 												)}
 											</div>
