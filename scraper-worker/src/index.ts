@@ -135,37 +135,69 @@ async function scrapeGuangxi(yyyy: string, mm: string, dd: string): Promise<Scra
 	return articles;
 }
 
-// -- Hainan Daily: static HTML, article links embedded as JS var map_NODE = { l: [...] }
-// Node page URL already contains today's node ID (built by buildSources)
+// -- Hainan Daily: two-level static HTML structure
+//   Level 1: node_XXXXX.htm → l:[content_NODEID_ARTICLEID.htm, ...] (section pages)
+//   Level 2: each section page → l:[content_NODEID_ARTICLEID.htm, ...] (actual articles)
+// We scrape both levels: if a content file yields short text it's a section page, so we
+// scan it for further content links and fetch those instead.
 async function scrapeHainan(nodeUrl: string): Promise<ScrapedArticle[]> {
 	const base = 'https://news.hndaily.cn';
 	const nodeHtml = await fetchHtml(nodeUrl, base + '/');
 	if (!nodeHtml) return [];
 
 	// Extract content filenames from: l:["content_58464_19645177.htm", ...]
-	const contentFiles: string[] = [];
-	for (const m of nodeHtml.matchAll(/l:\[([^\]]+)\]/g)) {
-		const files = m[1].match(/"(content_[^"]+\.htm)"/g);
-		if (files) contentFiles.push(...files.map(f => f.replace(/"/g, '')));
+	function extractContentFiles(html: string): string[] {
+		const files: string[] = [];
+		for (const m of html.matchAll(/l:\[([^\]]+)\]/g)) {
+			const found = m[1].match(/"(content_[^"]+\.htm)"/g);
+			if (found) files.push(...found.map(f => f.replace(/"/g, '')));
+		}
+		return files;
 	}
 
-	// Base path is same directory as the node page
 	const basePath = nodeUrl.substring(0, nodeUrl.lastIndexOf('/') + 1);
-	console.log(`[HAINAN] Found ${contentFiles.length} content files`);
+	const level1Files = extractContentFiles(nodeHtml);
+	console.log(`[HAINAN] Level 1: ${level1Files.length} content files`);
 
 	const articles: ScrapedArticle[] = [];
-	for (const file of contentFiles.slice(0, 15)) {
+	const seen = new Set<string>();
+
+	async function fetchArticle(file: string, referer: string): Promise<void> {
+		if (seen.has(file)) return;
+		seen.add(file);
 		const articleUrl = basePath + file;
-		const html = await fetchHtml(articleUrl, nodeUrl);
-		if (!html) continue;
+		const html = await fetchHtml(articleUrl, referer);
+		if (!html) return;
 
-		let title = '';
 		const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-		if (titleMatch) title = titleMatch[1].trim();
-
+		const title = titleMatch?.[1]?.trim() || file;
 		const text = await extractText(html);
-		if (text.length < 50) continue;
-		articles.push({ title: title || file, full_text: text, url: articleUrl, source: 'Hainan Daily' });
+
+		if (text.length >= 200) {
+			// Looks like a real article
+			articles.push({ title, full_text: text, url: articleUrl, source: 'Hainan Daily' });
+		} else {
+			// Short text → likely a section page; drill one level deeper
+			const level2Files = extractContentFiles(html);
+			for (const f2 of level2Files.slice(0, 8)) {
+				if (seen.has(f2)) continue;
+				seen.add(f2);
+				const url2 = basePath + f2;
+				const html2 = await fetchHtml(url2, articleUrl);
+				if (!html2) continue;
+				const t2Match = html2.match(/<title>([^"<]+)<\/title>/i);
+				const title2 = t2Match?.[1]?.trim() || f2;
+				const text2 = await extractText(html2);
+				if (text2.length >= 200) {
+					articles.push({ title: title2, full_text: text2, url: url2, source: 'Hainan Daily' });
+				}
+			}
+		}
+	}
+
+	// Fetch level-1 files (capped to avoid timeout)
+	for (const file of level1Files.slice(0, 12)) {
+		await fetchArticle(file, nodeUrl);
 	}
 
 	console.log(`[HAINAN] Scraped ${articles.length} articles with content`);
@@ -286,6 +318,27 @@ async function scrapeRss(config: RssConfig): Promise<ScrapedArticle[]> {
 	}
 	console.warn(`[RSS] ${config.name}: all instances failed — skipping`);
 	return [];
+}
+
+// After RSS scraping, try to fetch each article's URL to get full text.
+// RSS feeds only provide title + short excerpt; fetching the source URL often yields the
+// complete article. Falls back silently to the RSS excerpt if the fetch fails or is too short.
+async function enrichRssArticles(articles: ScrapedArticle[]): Promise<ScrapedArticle[]> {
+	return Promise.all(
+		articles.map(async (article) => {
+			if (article.parseType !== 'rss' || !article.url) return article;
+			try {
+				const html = await fetchHtml(article.url, article.url);
+				if (!html) return article;
+				const text = await extractText(html);
+				if (text.length < 200) return article;
+				console.log(`[RSS ENRICH] ${article.source}: fetched full text for "${article.title.slice(0, 40)}" (${text.length} chars)`);
+				return { ...article, full_text: text, parseType: 'full' as const };
+			} catch {
+				return article;
+			}
+		}),
+	);
 }
 
 async function fetchAndParseSources(sources: Source[], yyyy: string, mm: string, dd: string): Promise<ScrapedArticle[]> {
@@ -788,6 +841,7 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 		console.log('fetch-only mode — skipping Puppeteer, running fetch engine directly…');
 		scrapeMode = 'fetch-only';
 		scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
+		scrapedArticles = await enrichRssArticles(scrapedArticles);
 		console.log(`Fetch engine yielded ${scrapedArticles.length} articles.`);
 	} else {
 		try {
@@ -798,11 +852,16 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 				scrapedArticles.push(...arts);
 			}
 			try { await browser.close(); } catch { /* browser may already be closed on crash */ }
+			// RSS enrichment even after Puppeteer (Puppeteer won't cover Hunan/Nanfang if they
+			// are in rssSourceNames — those are skipped by the Puppeteer loop via fetchAndParseSources
+			// but the cron path calls scrapeUrl per source, so run enrichment on the full set)
+			scrapedArticles = await enrichRssArticles(scrapedArticles);
 			console.log(`Puppeteer scrape succeeded: ${scrapedArticles.length} articles.`);
 		} catch (puppeteerErr) {
 			console.warn(`Puppeteer failed (${(puppeteerErr as Error).message}). Falling back to fetch+HTMLRewriter…`);
 			scrapeMode = 'fetch-fallback';
 			scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
+			scrapedArticles = await enrichRssArticles(scrapedArticles);
 			console.log(`Fetch fallback yielded ${scrapedArticles.length} articles.`);
 		}
 	}
