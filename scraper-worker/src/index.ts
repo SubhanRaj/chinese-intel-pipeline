@@ -209,6 +209,45 @@ async function scrapeHainan(nodeUrl: string): Promise<ScrapedArticle[]> {
 	return articles;
 }
 
+// -- Yunnan Daily: main portal (www.yndaily.com) — article pages live on this domain
+// and are NOT WAF-blocked (only yndaily.yunnan.cn epaper is blocked).
+// Article URLs follow: /html/{yyyy}/yaowenyunnan_{mmdd}/{id}.html
+// Index page lists recent articles as <a href="…"> with title text.
+async function scrapeYunnan(yyyy: string, mm: string, dd: string): Promise<ScrapedArticle[]> {
+	const base = 'https://www.yndaily.com';
+	const indexHtml = await fetchHtml(base, base + '/');
+	if (!indexHtml) return [];
+
+	// Match article links on the same domain — exclude nav/utility pages
+	const articleRe = new RegExp(
+		`href=["'](${base}/html/${yyyy}/[^"']+\\.html)["'][^>]*>([^<]{5,120})`,
+		'g',
+	);
+	const seen = new Set<string>();
+	const links: { url: string; title: string }[] = [];
+	for (const m of indexHtml.matchAll(articleRe)) {
+		const url = m[1];
+		// Skip archive/utility paths
+		if (/about|contact|advert|mail|paper/.test(url)) continue;
+		if (!seen.has(url)) {
+			seen.add(url);
+			links.push({ url, title: m[2].trim() });
+		}
+	}
+	console.log(`[YUNNAN] Found ${links.length} article links`);
+
+	const articles: ScrapedArticle[] = [];
+	for (const { url, title } of links.slice(0, 20)) {
+		const html = await fetchHtml(url, base + '/');
+		if (!html) continue;
+		const text = await extractText(html);
+		if (text.length < 200) continue;
+		articles.push({ title, full_text: text, url, source: 'Yunnan Daily' });
+	}
+	console.log(`[YUNNAN] Scraped ${articles.length} articles with content`);
+	return articles;
+}
+
 // -- Hunan Daily: static HTML portal with direct article links
 // Index: https://hnrb.hunantoday.cn
 // Articles: https://hnrb.hunantoday.cn/article/{yyyymm}/{yyyymmddHHMMSSxxxxxxxxx}.html
@@ -387,9 +426,10 @@ async function fetchAndParseSources(sources: Source[], yyyy: string, mm: string,
 	// Dedicated scrapers: Guangxi (epaper API), Hainan (two-level static HTML), Hunan (article portal).
 	// Generic HTMLRewriter for: Yunnan, Sichuan, Fujian, Nanfang — all now have static-HTML URLs.
 	// RSS fallback kept for Nanfang only (epaper may be thin; RSS adds more article variety).
-	const dedicatedNames = new Set(['Guangxi Daily', 'Hainan Daily', 'Hunan Daily']);
+	const dedicatedNames = new Set(['Yunnan Daily', 'Guangxi Daily', 'Hainan Daily', 'Hunan Daily']);
 	const rssSourceNames = new Set(RSS_CONFIGS.map(c => c.name));
 	const results = await Promise.allSettled([
+		scrapeYunnan(yyyy, mm, dd),
 		scrapeGuangxi(yyyy, mm, dd),
 		scrapeHainan(sources.find(s => s.name === 'Hainan Daily')!.url),
 		scrapeHunan(yyyy, mm),
