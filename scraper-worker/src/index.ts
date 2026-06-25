@@ -127,7 +127,7 @@ async function scrapeGuangxi(yyyy: string, mm: string, dd: string): Promise<Scra
 
 	const articles: ScrapedArticle[] = [];
 	// Limit to 20 articles to stay within AI context budget
-	for (const { code, xuhao, title } of links.slice(0, 20)) {
+	for (const { code, xuhao, title } of links.slice(0, 6)) {
 		const articleUrl = `${base}/json/interface/epaper/api.php?name=gxrb&date=${date}&code=${code}&xuhao=${xuhao}`;
 		const html = await fetchHtml(articleUrl, indexUrl);
 		if (!html) continue;
@@ -184,7 +184,7 @@ async function scrapeHainan(nodeUrl: string): Promise<ScrapedArticle[]> {
 		} else {
 			// Short text → likely a section page; drill one level deeper
 			const level2Files = extractContentFiles(html);
-			for (const f2 of level2Files.slice(0, 8)) {
+			for (const f2 of level2Files.slice(0, 2)) {
 				if (seen.has(f2)) continue;
 				seen.add(f2);
 				const url2 = basePath + f2;
@@ -201,7 +201,7 @@ async function scrapeHainan(nodeUrl: string): Promise<ScrapedArticle[]> {
 	}
 
 	// Fetch level-1 files (capped to avoid timeout)
-	for (const file of level1Files.slice(0, 12)) {
+	for (const file of level1Files.slice(0, 5)) {
 		await fetchArticle(file, nodeUrl);
 	}
 
@@ -237,7 +237,7 @@ async function scrapeYunnan(yyyy: string, mm: string, dd: string): Promise<Scrap
 	console.log(`[YUNNAN] Found ${links.length} article links`);
 
 	const articles: ScrapedArticle[] = [];
-	for (const { url, title } of links.slice(0, 20)) {
+	for (const { url, title } of links.slice(0, 5)) {
 		const html = await fetchHtml(url, base + '/');
 		if (!html) continue;
 		const text = await extractText(html);
@@ -273,7 +273,7 @@ async function scrapeHunan(yyyy: string, mm: string): Promise<ScrapedArticle[]> 
 	console.log(`[HUNAN] Found ${links.length} article links for ${yyyy}${mm}`);
 
 	const articles: ScrapedArticle[] = [];
-	for (const { url, title } of links.slice(0, 20)) {
+	for (const { url, title } of links.slice(0, 6)) {
 		const html = await fetchHtml(url, base + '/');
 		if (!html) continue;
 		const text = await extractText(html);
@@ -926,7 +926,6 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 		console.log('fetch-only mode — skipping Puppeteer, running fetch engine directly…');
 		scrapeMode = 'fetch-only';
 		scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
-		scrapedArticles = await enrichRssArticles(scrapedArticles);
 		console.log(`Fetch engine yielded ${scrapedArticles.length} articles.`);
 	} else {
 		try {
@@ -937,16 +936,11 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 				scrapedArticles.push(...arts);
 			}
 			try { await browser.close(); } catch { /* browser may already be closed on crash */ }
-			// RSS enrichment even after Puppeteer (Puppeteer won't cover Hunan/Nanfang if they
-			// are in rssSourceNames — those are skipped by the Puppeteer loop via fetchAndParseSources
-			// but the cron path calls scrapeUrl per source, so run enrichment on the full set)
-			scrapedArticles = await enrichRssArticles(scrapedArticles);
 			console.log(`Puppeteer scrape succeeded: ${scrapedArticles.length} articles.`);
 		} catch (puppeteerErr) {
 			console.warn(`Puppeteer failed (${(puppeteerErr as Error).message}). Falling back to fetch+HTMLRewriter…`);
 			scrapeMode = 'fetch-fallback';
 			scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
-			scrapedArticles = await enrichRssArticles(scrapedArticles);
 			console.log(`Fetch fallback yielded ${scrapedArticles.length} articles.`);
 		}
 	}
