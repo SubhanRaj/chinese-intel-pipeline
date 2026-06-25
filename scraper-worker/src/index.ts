@@ -35,12 +35,17 @@ interface Source {
 function buildSources(yyyy: string, mm: string, dd: string): Source[] {
 	const yyyymmdd = `${yyyy}${mm}${dd}`;
 	return [
-		{ name: 'Yunnan Daily',  url: `https://yndaily.yunnan.cn/html/${yyyy}/${yyyymmdd}/${yyyymmdd}_001/${yyyymmdd}_001_6618.html#0` },
-		{ name: 'Sichuan Daily', url: `https://4g.scdaily.cn/wap/scrb/${yyyymmdd}/index.html` },
+		// www.yndaily.com: main portal, no WAF. Old epaper (yndaily.yunnan.cn) returns 403.
+		{ name: 'Yunnan Daily',  url: `https://www.yndaily.com` },
+		// www.scdaily.cn: main portal, 106 static text blocks. Old mobile SPA (4g.scdaily.cn) returned 123 chars.
+		{ name: 'Sichuan Daily', url: `https://www.scdaily.cn` },
 		{ name: 'Guangxi Daily', url: `https://ssw.gxrb.com.cn/json/interface/epaper/api.php?#p=001` },
-		{ name: 'Hunan Daily',   url: `https://h5cgi.voc.com.cn/hnrbdzb/#/` },
-		{ name: 'Fujian Daily',  url: `https://fjrb.fjdaily.com/pad/col/${yyyy}${mm}/${dd}/node_01.html` },
-		{ name: 'Nanfang Daily', url: `https://epaper.nfnews.com/m/ipaper/nfrb/html/${yyyy}${mm}/${dd}/node_A05.html#/` },
+		// hnrb.hunantoday.cn: static HTML with direct article links. Old SPA returned 7 chars.
+		{ name: 'Hunan Daily',   url: `https://hnrb.hunantoday.cn` },
+		// PC edition has cleaner article structure than the mobile pad/ URL
+		{ name: 'Fujian Daily',  url: `https://fjrb.fjdaily.com/pc/col/${yyyy}${mm}/${dd}/node_01.html` },
+		// southcn.com epaper: static HTML with article titles per section. Old SPA (#/) needed JS.
+		{ name: 'Nanfang Daily', url: `https://epaper.southcn.com/nfdaily/html/${yyyy}${mm}/${dd}/node_A01.html` },
 		{ name: 'Hainan Daily',  url: `https://news.hndaily.cn/h5/html5/${yyyy}-${mm}/${dd}/node_58471.htm` },
 	];
 }
@@ -204,6 +209,42 @@ async function scrapeHainan(nodeUrl: string): Promise<ScrapedArticle[]> {
 	return articles;
 }
 
+// -- Hunan Daily: static HTML portal with direct article links
+// Index: https://hnrb.hunantoday.cn
+// Articles: https://hnrb.hunantoday.cn/article/{yyyymm}/{yyyymmddHHMMSSxxxxxxxxx}.html
+// Each article page has full body text in <p> tags — no JS rendering required.
+async function scrapeHunan(yyyy: string, mm: string): Promise<ScrapedArticle[]> {
+	const base = 'https://hnrb.hunantoday.cn';
+	const indexHtml = await fetchHtml(base, base + '/');
+	if (!indexHtml) return [];
+
+	// Extract article links for this month (yyyymm prefix keeps us to current edition)
+	const articleRe = new RegExp(
+		`href=["'](${base}/article/${yyyy}${mm}/[^"']+\\.html)["'][^>]*>([^<]{4,120})`,
+		'g',
+	);
+	const seen = new Set<string>();
+	const links: { url: string; title: string }[] = [];
+	for (const m of indexHtml.matchAll(articleRe)) {
+		if (!seen.has(m[1])) {
+			seen.add(m[1]);
+			links.push({ url: m[1], title: m[2].trim() });
+		}
+	}
+	console.log(`[HUNAN] Found ${links.length} article links for ${yyyy}${mm}`);
+
+	const articles: ScrapedArticle[] = [];
+	for (const { url, title } of links.slice(0, 20)) {
+		const html = await fetchHtml(url, base + '/');
+		if (!html) continue;
+		const text = await extractText(html);
+		if (text.length < 200) continue;
+		articles.push({ title, full_text: text, url, source: 'Hunan Daily' });
+	}
+	console.log(`[HUNAN] Scraped ${articles.length} articles with content`);
+	return articles;
+}
+
 // -- Generic HTMLRewriter fallback for sources without a known API pattern
 async function scrapeGeneric(url: string, sourceName: string): Promise<ScrapedArticle[]> {
 	const html = await fetchHtml(url, new URL(url).origin + '/');
@@ -235,8 +276,9 @@ interface RssConfig {
 	path: string;   // RSSHub route path e.g. /hnrb
 }
 
+// Hunan Daily now has a dedicated fetch scraper (scrapeHunan) — no RSS needed.
+// Nanfang Daily RSS kept as fallback; the static epaper URL is tried via scrapeGeneric first.
 const RSS_CONFIGS: RssConfig[] = [
-	{ name: 'Hunan Daily',   path: '/hnrb' },
 	{ name: 'Nanfang Daily', path: '/southcn/nfapp/column/38' },
 ];
 
@@ -342,17 +384,20 @@ async function enrichRssArticles(articles: ScrapedArticle[]): Promise<ScrapedArt
 }
 
 async function fetchAndParseSources(sources: Source[], yyyy: string, mm: string, dd: string): Promise<ScrapedArticle[]> {
-	// Sources with dedicated scrapers get those; the rest get the generic HTMLRewriter fallback
-	// (which silently returns [] for JS-rendered SPAs). RSS scrapers run in parallel for the
-	// sources that have confirmed RSSHub routes and no working fetch strategy.
+	// Dedicated scrapers: Guangxi (epaper API), Hainan (two-level static HTML), Hunan (article portal).
+	// Generic HTMLRewriter for: Yunnan, Sichuan, Fujian, Nanfang — all now have static-HTML URLs.
+	// RSS fallback kept for Nanfang only (epaper may be thin; RSS adds more article variety).
+	const dedicatedNames = new Set(['Guangxi Daily', 'Hainan Daily', 'Hunan Daily']);
 	const rssSourceNames = new Set(RSS_CONFIGS.map(c => c.name));
 	const results = await Promise.allSettled([
 		scrapeGuangxi(yyyy, mm, dd),
 		scrapeHainan(sources.find(s => s.name === 'Hainan Daily')!.url),
+		scrapeHunan(yyyy, mm),
 		// Generic fetch fallback for sources without a dedicated scraper or RSS route
 		...sources
-			.filter(s => s.name !== 'Guangxi Daily' && s.name !== 'Hainan Daily' && !rssSourceNames.has(s.name))
+			.filter(s => !dedicatedNames.has(s.name) && !rssSourceNames.has(s.name))
 			.map(s => scrapeGeneric(s.url, s.name)),
+		// RSS fallback for Nanfang (kept as supplement to the static epaper scrape)
 		// RSS fallback for JS-rendered sources with confirmed RSSHub routes
 		...RSS_CONFIGS.map(cfg => scrapeRss(cfg)),
 	]);

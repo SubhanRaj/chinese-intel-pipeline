@@ -243,15 +243,77 @@ This is fundamentally not replicable in a Cloudflare Worker. It confirms the sit
 
 ---
 
+## Alternative URLs Found via Google Search (2026-06-25)
+
+Searching each newspaper name on Google revealed significantly better entry points than the original mobile epaper URLs. All tested with `curl` and our `extractText` simulator.
+
+| Source | Old URL | New URL | Result |
+|--------|---------|---------|--------|
+| Yunnan Daily | `yndaily.yunnan.cn/html/…` (WAF 403) | `www.yndaily.com` | 200, article titles visible but links still go to WAF-blocked epaper |
+| Sichuan Daily | `4g.scdaily.cn/wap/…` (123 chars, SPA) | `www.scdaily.cn` | **200, 106 semantic text blocks** — generic scraper works perfectly |
+| Hunan Daily | `h5cgi.voc.com.cn/hnrbdzb/#/` (7 chars, headless detection) | `hnrb.hunantoday.cn` | **200, static HTML portal with direct article links** — dedicated scraper added |
+| Fujian Daily | `fjrb.fjdaily.com/pad/col/…` (mobile) | `fjrb.fjdaily.com/pc/col/…` | Both work; PC has cleaner structure |
+| Nanfang Daily | `epaper.nfnews.com/m/ipaper/…#/` (SPA shell) | `epaper.southcn.com/nfdaily/html/…/node_A01.html` | **200, static epaper with article headlines in `<p>` tags** |
+| Guangxi Daily | unchanged | unchanged | Existing API scraper still best |
+| Hainan Daily | unchanged | unchanged | Existing two-level static parser still best |
+
+### Hunan Daily — Dedicated Scraper Added
+
+`hnrb.hunantoday.cn` is a static HTML portal that lists article links with the pattern:
+```
+https://hnrb.hunantoday.cn/article/{yyyymm}/{yyyymmddHHMMSSxxxxxxxxx}.html
+```
+
+Each article page returns ~2,500 chars of body text in `<p>` tags, fully extractable by our `HTMLRewriter` pipeline. The dedicated `scrapeHunan()` function:
+1. Fetches the index page
+2. Regex-matches article links for the current month (`/article/yyyymm/`)
+3. Fetches each article, extracts text, filters at 200 chars minimum
+4. Yields up to 20 full articles
+
+This replaces both the old SPA URL and the RSS fallback for Hunan Daily entirely.
+
+### Sichuan Daily — URL Update Only
+
+`www.scdaily.cn` homepage has 106 semantic text blocks (article titles + excerpts) in `<h>` and `<p>` tags, directly readable by the generic `extractText` scraper. No code changes needed — just updated the URL in `buildSources`.
+
+### Nanfang Daily — URL Update + RSS Retained
+
+`epaper.southcn.com/nfdaily/html/{yyyymm}/{dd}/node_A01.html` is a static epaper page with article headlines per section. Sub-pages follow the pattern `node_A02.html`, `node_A03.html` etc. The generic scraper now hits this instead of the SPA. RSS via RSSHub is kept as a supplement since the static epaper gives headlines only (no full article body).
+
+## Jina Reader (`r.jina.ai`) — Tested as Tier 3 Option
+
+Jina Reader is a free HTTP API that renders any URL in a real browser and returns clean markdown. Callable directly from a Cloudflare Worker via `fetch('https://r.jina.ai/{url}')`. No API key needed for basic use (20 RPM); free key gives 500 RPM.
+
+### Test results (2026-06-25)
+
+| Source | Jina result |
+|--------|-------------|
+| Sichuan Daily | ✅ Full article headlines across 6 pages — confirmed working before URL fix |
+| Nanfang Daily | ⚠️ Some article titles + mostly images |
+| Yunnan Daily | ❌ Still WAF-blocked (Jina's IPs also on blocklist) |
+| Hunan Daily | ❌ Image-only epaper — content is scanned newspaper pages, not text |
+
+Jina was not implemented in the worker since the new static HTML URLs solved Sichuan and Hunan without it. Kept as a documented option for future problem sources.
+
+### PDF / OCR epaper question
+
+Some Chinese epapers offer PDF downloads of the daily print edition. However:
+- **All tested epapers are image PDFs** — scanned newspaper pages, not text-layer PDFs
+- **Cloudflare Workers cannot run PDF parsers or OCR** — no native PDF.js, no Tesseract
+- **OCR via external API** (e.g. Google Vision, Azure OCR) would add cost and latency, and Chinese newspaper fonts are a known OCR challenge
+- Storing the PDF download URL in `temp_articles` for manual reading is feasible but adds no intelligence value to the pipeline
+
+Not implemented. The static HTML portals discovered above provide better text coverage than OCR of image PDFs would.
+
 ## Remaining Open Problems
 
-1. **Yunnan Daily** — Needs dynamic article ID discovery (the ID in the URL changes per edition) AND a way past the WAF. One approach: try fetching the edition index page (`/{yyyy}/{yyyymmdd}/`) to discover the day's article links. Still blocked by WAF from datacenter IPs.
+1. **Yunnan Daily** — `www.yndaily.com` is not WAF-blocked but article links all redirect to `yndaily.yunnan.cn` (WAF-blocked). The main portal is a link aggregator; actual article pages live on the blocked domain. No workaround found without a Chinese residential proxy or alternative domain.
 
-2. **Sichuan Daily** — No RSS feed found. Options: find an alternative URL pattern, find a third-party aggregator, or drop this source until a workaround is found.
+2. **Fujian Daily full articles** — The PC/mobile epaper scraper gets section headline lists (~1,000 chars covering all headlines on a section page), not individual article bodies. An article-level scraper would require mapping from section pages to individual article URLs.
 
-3. **Fujian Daily full articles** — The generic HTMLRewriter scraper gets section headline lists, not individual article bodies. An article-level scraper (similar to Guangxi/Hainan) would require reverse-engineering their URL structure.
+3. **Hainan Daily node ID churn** — The node ID `58471` and content file IDs change per edition. The current scraper assumes this is the daily section entry. If the site restructures, the scraper breaks silently. A future improvement: discover the day's node IDs by fetching the edition index.
 
-4. **Hainan article ID churn** — The node ID `58471` and content file IDs change per edition. The current scraper assumes `node_58471` is the daily deep-read section. If the site restructures, the scraper breaks silently.
+4. **Nanfang Daily article depth** — `epaper.southcn.com` gives headline titles but not article bodies. Individual article pages would need a further scraping layer.
 
 ---
 
