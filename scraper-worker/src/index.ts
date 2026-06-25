@@ -35,7 +35,7 @@ interface Source {
 function buildSources(yyyy: string, mm: string, dd: string): Source[] {
 	const yyyymmdd = `${yyyy}${mm}${dd}`;
 	return [
-		{ name: 'Yunnan Daily',  url: `https://yndaily.yunnan.cn/html/${yyyy}/${mm}${dd}/${yyyymmdd}_001/${yyyymmdd}_001_6618.html#0` },
+		{ name: 'Yunnan Daily',  url: `https://yndaily.yunnan.cn/html/${yyyy}/${yyyymmdd}/${yyyymmdd}_001/${yyyymmdd}_001_6618.html#0` },
 		{ name: 'Sichuan Daily', url: `https://4g.scdaily.cn/wap/scrb/${yyyymmdd}/index.html` },
 		{ name: 'Guangxi Daily', url: `https://ssw.gxrb.com.cn/json/interface/epaper/api.php?#p=001` },
 		{ name: 'Hunan Daily',   url: `https://h5cgi.voc.com.cn/hnrbdzb/#/` },
