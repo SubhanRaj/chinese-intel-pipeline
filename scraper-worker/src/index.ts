@@ -556,16 +556,27 @@ function extractJsonArray(rawText: string): unknown[] | null {
 	return null;
 }
 
-// ── Pass 1: filter ────────────────────────────────────────────────────────────
-// Send all article titles to AI. It evaluates each for geopolitical significance
-// and returns a decision + reason for every article. This uses very few tokens
-// (titles only, English output) so the filter pass is cheap on the free tier.
+// ── Combined Pass: filter + analyse ──────────────────────────────────────────
+// Sends all articles with title + body snippet so importance is judged on actual
+// content rather than titles alone. Important articles get full analysis in the
+// same call; unimportant articles just get a translated title and a reason.
 
-const FILTER_PROMPT = `You are a geopolitical intelligence analyst. You will receive a JSON array of Chinese newspaper article titles (index + title pairs).
+const COMBINED_PROMPT = `You are a geopolitical intelligence analyst processing Chinese provincial newspaper articles.
 
-Your task: evaluate every article for significance to international intelligence, foreign policy, and strategic monitoring.
+You will receive a JSON array where each element has "index", "title" (Chinese), and "snippet" (opening portion of the article body in Chinese).
 
-Mark important: true ONLY for articles that clearly involve:
+For EVERY article return a JSON object with:
+- "index": same integer as input
+- "title_en": accurate English translation of the Chinese title
+- "important": true or false
+- "reason": one sentence explaining why included or excluded
+- For important: true articles ONLY — also include:
+  - "summary": 2–3 sentence geopolitical analysis in English; flag high-significance items with [HIGH]
+  - "full_text_en": faithful English translation of the snippet
+  - "category": exactly one of "Political", "Military", "Economic", "Technology", "Social", "Foreign Affairs"
+- For important: false articles set "summary", "full_text_en", "category" to ""
+
+Mark important: true for articles that clearly involve:
 - Military movements, exercises, procurement, weapons, or doctrine
 - Senior national/provincial leadership decisions, speeches, or personnel changes (Xi Jinping, Politburo, ministers, provincial party secretaries)
 - Foreign policy, bilateral diplomacy, cross-border events, or international agreements
@@ -583,76 +594,19 @@ Mark important: false for:
 - Trade fairs, business expos, signing ceremonies with purely domestic parties
 - Local government meetings with no foreign or national-security dimension
 
-Be selective: aim for roughly 20–30% of articles as important. When in doubt, mark false.
+Aim for 40–60% of articles as important. Use the snippet to make a well-informed decision — when in doubt, mark important.
 
-Return ONLY a valid JSON array — no markdown, no code fences, no explanation:
-[
-  {
-    "index": 0,
-    "title_en": "accurate English translation of the Chinese title",
-    "important": true,
-    "reason": "One sentence explaining why included or excluded"
-  }
-]
+Return ONLY a valid JSON array — no markdown, no code fences, no explanation. Every input article must appear in the output. Your output must be parseable by JSON.parse().`;
 
-Every input article must appear in the output array. Your output must be parseable by JSON.parse().`;
-
-interface FilterDecision {
+interface CombinedDecision {
 	index: number;
 	title_en: string;
 	important: boolean;
 	reason: string;
+	summary: string;
+	full_text_en: string;
+	category: string;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function filterArticlesWithAI(ai: any, articles: ScrapedArticle[]): Promise<FilterDecision[]> {
-	const input = JSON.stringify(
-		articles.map((a, i) => ({ index: i, title: a.title })),
-	).slice(0, 3_000); // titles only — ~6k tokens input, ~2k tokens output → very cheap
-
-	const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
-		max_tokens: 2048,
-		messages: [
-			{ role: 'system', content: FILTER_PROMPT },
-			{ role: 'user', content: input },
-		],
-	});
-
-	const rawText = extractAiText(response);
-	if (!rawText) throw new Error(`Filter AI bad response shape: ${JSON.stringify(response).slice(0, 200)}`);
-
-	const parsed = extractJsonArray(rawText);
-	if (parsed && parsed.length > 0 && 'important' in (parsed[0] as object)) {
-		const decisions = parsed as FilterDecision[];
-		const importantCount = decisions.filter(d => d.important).length;
-		console.log(`[FILTER AI] ${importantCount}/${decisions.length} articles marked important`);
-		return decisions;
-	}
-
-	// Fallback: treat all as important so no data is lost
-	console.warn('[FILTER AI] Could not parse filter response — treating all articles as important');
-	return articles.map((a, i) => ({
-		index: i,
-		title_en: a.title,
-		important: true,
-		reason: 'Filter AI unavailable — included by default',
-	}));
-}
-
-// ── Pass 2: deep analysis ─────────────────────────────────────────────────────
-// Runs only on the important subset. Full translation + summary + category.
-
-const ANALYSIS_PROMPT = `You are an intelligence analyst processing Chinese provincial newspaper articles.
-You will receive a JSON array of article objects, each with "title" (Chinese), "full_text" (Chinese), and "url".
-
-Return ONLY a valid JSON array — no markdown, no code fences, no explanation. Each element must have:
-- "title": English translation of the original Chinese title (concise, accurate)
-- "summary": 2–3 sentence geopolitical analysis in English (flag high-significance items with [HIGH])
-- "full_text_en": complete, faithful English translation of the full_text field
-- "url": copy the original URL unchanged
-- "category": classify into exactly one of: "Political", "Military", "Economic", "Technology", "Social", "Foreign Affairs"
-
-Your output must be parseable by JSON.parse() with no preprocessing.`;
 
 interface AiArticle {
 	title: string;
@@ -663,41 +617,51 @@ interface AiArticle {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function analyseWithWorkersAI(ai: any, articles: ScrapedArticle[]): Promise<AiArticle[]> {
-	// Build input article-by-article so we never truncate mid-JSON.
-	// Each article ~400 chars → budget 5,800 chars total for ~14 articles safely.
-	const inputArticles: { title: string; full_text: string; url: string }[] = [];
-	let budget = 5_800;
-	for (const a of articles) {
-		const entry = { title: a.title, full_text: a.full_text.slice(0, 400), url: a.url };
-		const len = JSON.stringify(entry).length + 2; // +2 for comma/bracket overhead
+async function filterAndAnalyseWithAI(ai: any, articles: ScrapedArticle[]): Promise<CombinedDecision[]> {
+	// Build input article-by-article: title + 200-char snippet per article.
+	// Budget 8,000 chars covers ~30 articles and stays safely within the model context window.
+	const inputArticles: { index: number; title: string; snippet: string }[] = [];
+	let budget = 8_000;
+	for (let i = 0; i < articles.length; i++) {
+		const a = articles[i];
+		const entry = { index: i, title: a.title, snippet: a.full_text.slice(0, 200) };
+		const len = JSON.stringify(entry).length + 2;
 		if (budget - len < 0) break;
 		inputArticles.push(entry);
 		budget -= len;
 	}
-	console.log(`[ANALYSIS AI] Sending ${inputArticles.length} of ${articles.length} important articles (budget-capped)`);
+	console.log(`[COMBINED AI] Sending ${inputArticles.length} of ${articles.length} articles`);
 
 	const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
-		max_tokens: 4096, // default 256 truncates JSON arrays — must be set explicitly
+		max_tokens: 4096,
 		messages: [
-			{ role: 'system', content: ANALYSIS_PROMPT },
+			{ role: 'system', content: COMBINED_PROMPT },
 			{ role: 'user', content: JSON.stringify(inputArticles) },
 		],
 	});
 
-	// Workers AI (Llama): { response: string } by default; { choices:[...] } when max_tokens is set
 	const rawText = extractAiText(response);
-	if (!rawText) throw new Error(`Analysis AI bad response shape: ${JSON.stringify(response).slice(0, 200)}`);
+	if (!rawText) throw new Error(`Combined AI bad response shape: ${JSON.stringify(response).slice(0, 200)}`);
 
 	const parsed = extractJsonArray(rawText);
-	if (parsed && parsed.length > 0 && 'title' in (parsed[0] as object)) {
-		const results = parsed as AiArticle[];
-		console.log(`[ANALYSIS AI] ${results.length} articles, first: ${results[0].title}`);
-		return results;
+	if (parsed && parsed.length > 0 && 'important' in (parsed[0] as object)) {
+		const decisions = parsed as CombinedDecision[];
+		const importantCount = decisions.filter(d => d.important).length;
+		console.log(`[COMBINED AI] ${importantCount}/${decisions.length} articles marked important`);
+		return decisions;
 	}
 
-	console.warn('[ANALYSIS AI] Could not parse JSON array — using fallback');
-	return articles.map(a => ({ title: a.title, summary: 'Analysis unavailable.', full_text_en: '', url: a.url, category: 'Uncategorized' }));
+	// Fallback: treat all articles as important with stub analysis so no data is lost
+	console.warn('[COMBINED AI] Could not parse response — treating all articles as important');
+	return articles.map((a, i) => ({
+		index: i,
+		title_en: a.title,
+		important: true,
+		reason: 'Combined AI unavailable — included by default',
+		summary: 'Analysis unavailable.',
+		full_text_en: '',
+		category: 'Uncategorized',
+	}));
 }
 
 // ── Pass 3: cluster ───────────────────────────────────────────────────────────
@@ -956,14 +920,14 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 	// ── Step 1: Delete previous day's temp articles (they've had their 24h) ──
 	await env.DB.prepare(`DELETE FROM temp_articles WHERE tracking_date != ?`).bind(trackingDate).run();
 
-	// ── Step 2: Pass 1 — filter all articles by title, get importance decisions ──
-	console.log(`Pass 1: filtering ${scrapedArticles.length} articles by title…`);
-	const filterDecisions = await filterArticlesWithAI(env.AI, scrapedArticles);
+	// ── Step 2: Combined pass — filter + analyse all articles in one AI call ──
+	console.log(`Combined pass: filter + analyse ${scrapedArticles.length} articles…`);
+	const combinedDecisions = await filterAndAnalyseWithAI(env.AI, scrapedArticles);
 
 	// ── Step 3: Store ALL articles in temp_articles (visible in Today's Feed, 24h lifespan) ──
 	for (let i = 0; i < scrapedArticles.length; i++) {
 		const scraped = scrapedArticles[i];
-		const decision = filterDecisions.find(d => d.index === i);
+		const decision = combinedDecisions.find(d => d.index === i);
 		await db.insert(tempArticles).values({
 			trackingDate,
 			title: scraped.title,
@@ -978,13 +942,18 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 	}
 	console.log(`Stored ${scrapedArticles.length} articles in temp_articles.`);
 
-	// ── Step 4: Pass 2 — deep analysis on the important subset only ──
-	const importantScraped = scrapedArticles.filter((_, i) => {
-		const d = filterDecisions.find(fd => fd.index === i);
-		return d ? d.important : true;
-	});
-	console.log(`Pass 2: deep analysis on ${importantScraped.length} important articles…`);
-	const aiArticles = await analyseWithWorkersAI(env.AI, importantScraped);
+	// ── Step 4: Collect important articles for clustering ──
+	const importantDecisions = combinedDecisions.filter(d => d.important);
+	const importantScraped = importantDecisions.map(d => scrapedArticles[d.index]).filter(Boolean);
+	// Map to AiArticle shape for the cluster pass (url comes from scraped, not AI output)
+	const aiArticles: AiArticle[] = importantDecisions.map((d, i) => ({
+		title: d.title_en,
+		summary: d.summary || 'Analysis unavailable.',
+		full_text_en: d.full_text_en || '',
+		url: scrapedArticles[d.index]?.url ?? '',
+		category: d.category || 'Uncategorized',
+	}));
+	console.log(`${importantDecisions.length} articles marked important, proceeding to cluster pass…`);
 
 	// ── Step 5: Upsert briefing parent record ──
 	const rawScrapedText = scrapedArticles
