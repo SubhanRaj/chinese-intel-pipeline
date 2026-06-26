@@ -36,31 +36,25 @@ An automated intelligence extraction pipeline that scrapes Chinese provincial ne
                                                         │  ScrapedArticle[]
                                                         │  (~33 full + RSS excerpts)
                                             ┌───────────▼──────────────────────┐
-                                            │     AI PASS 1 — FILTER            │
+                                            │   AI PASS 1 — FILTER + ANALYSE    │
                                             │                                   │
                                             │  Llama 3.3 70B                    │
-                                            │  Input: all titles only (~4k tok) │
+                                            │  Input: title + 200-char snippet  │
+                                            │  (~8k chars, ~30 articles)        │
                                             │  Output per article:              │
                                             │    title_en, important, reason    │
+                                            │    summary, full_text_en, category│
+                                            │    (summary/translation only for  │
+                                            │     important articles)           │
                                             └───────────┬──────────────────────┘
                                                         │
                                           ┌─────────────┴──────────────┐
                                           │                            │
                                    ALL articles               Important subset
-                                  → temp_articles               (~8–12 articles)
+                                  → temp_articles               (~13–20 articles)
                                   (24h feed view)                      │
                                                         ┌─────────────▼────────────┐
-                                                        │   AI PASS 2 — ANALYSE     │
-                                                        │                           │
-                                                        │  Llama 3.3 70B            │
-                                                        │  Input: full text (~12k)  │
-                                                        │  Output per article:      │
-                                                        │    title_en, summary,     │
-                                                        │    full_text_en, category │
-                                                        └─────────────┬────────────┘
-                                                                      │  AiArticle[]
-                                                        ┌─────────────▼────────────┐
-                                                        │   AI PASS 3 — CLUSTER     │
+                                                        │   AI PASS 2 — CLUSTER     │
                                                         │                           │
                                                         │  Llama 3.3 70B            │
                                                         │  Groups same-topic        │
@@ -140,7 +134,7 @@ RSS sources use a shared `scrapeRss()` function:
 - 8-second timeout per attempt — fails gracefully with `[]` if both instances are unreachable
 - Parses RSS 2.0 and Atom feeds; handles `<![CDATA[...]]>` wrappers and inline HTML in descriptions
 - Articles stored with `parse_type = 'rss'` in both `temp_articles` and `intel_articles`
-- Pass 2 analysis runs normally on important RSS articles — the AI translates and summarises the excerpt it receives; `full_text_en` reflects that limited input
+- Pass 1 analysis runs normally on important RSS articles — the AI translates and summarises the excerpt it receives; `full_text_en` reflects that limited input
 
 **Dashboard treatment of RSS articles:**
 - Amber **RSS** badge visible in Today's Feed, Intel Briefing drawer, and Archive cards
@@ -153,57 +147,51 @@ RSS sources use a shared `scrapeRss()` function:
 
 ---
 
-## Three-pass AI pipeline
+## Two-pass AI pipeline
 
 **Model:** `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (Cloudflare Workers AI — free tier)
 
-Three sequential AI calls per run. Each pass is cheap relative to doing everything in one shot.
+Two sequential AI calls per run.
 
-### Pass 1 — Filter
+### Pass 1 — Combined filter + analyse
 
-All scraped article titles sent to Llama. The model evaluates every article for geopolitical significance and returns a structured decision for each.
+All scraped articles sent to Llama with their title and a 200-character body snippet. The model judges importance from actual content (not titles alone) and produces full analysis for important articles in the same call. This replaces the previous two-call approach (title-only filter → separate analysis) which was under-flagging articles because it couldn't see body text at the filter stage.
 
-**Output per article:**
+**Input per article:**
 ```json
-{ "index": 0, "title_en": "English title", "important": true, "reason": "One sentence explanation" }
+{ "index": 0, "title": "Chinese title", "snippet": "First 200 chars of body text" }
 ```
-
-**Marked important** (aim ~20–30% of articles): military movements/procurement/doctrine, senior national or provincial leadership decisions, bilateral diplomacy and cross-border events, economic policy with international implications, technology with strategic or dual-use potential, significant unrest or politically sensitive events.
-
-**Marked not important:** local infrastructure, sports/entertainment/tourism, routine agriculture/weather/education, advertising, administrative notices, provincial economic statistics with no international angle, party study campaigns, purely domestic trade fairs or signing ceremonies.
-
-The reason for both included and excluded articles is stored in `temp_articles` and shown in the Today's Feed dashboard view — so you can audit and improve the filter criteria over time.
-
-**Token budget:**
-| Item | Value |
-|---|---|
-| Input (all titles) | ~33 titles × ~50 chars × 2 tok/char ≈ 3,300 tokens |
-| Output (decisions + reasons) | ~33 entries × ~80 chars ≈ 1,300 tokens |
-| Total | ~4,600 tokens |
-
-### Pass 2 — Deep analysis
-
-Runs only on the important subset (~8–12 articles). Full translation, geopolitical summary, category.
-
-| Limit | Value | Why |
-|---|---|---|
-| Per-article text | 400 chars | ~800 tokens; fewer articles means more budget per article |
-| Total JSON input | 5,800 chars budget | Articles added one-by-one until budget exhausted — no mid-JSON truncation |
-| `max_tokens` output | 4,096 | Default 256 truncates JSON arrays |
-| Model context window | 24,000 tokens | System ~500 + input ~12k + output ~4k ≈ 16,500 — safe |
 
 **Output per article:**
 ```json
 {
-  "title": "English headline",
+  "index": 0,
+  "title_en": "English headline",
+  "important": true,
+  "reason": "One sentence explaining why included or excluded",
   "summary": "2–3 sentence geopolitical analysis. [HIGH] if significant.",
-  "full_text_en": "Complete faithful English translation",
-  "url": "original source URL unchanged",
+  "full_text_en": "Faithful English translation of the snippet",
   "category": "Political | Military | Economic | Technology | Social | Foreign Affairs"
 }
 ```
 
-### Pass 3 — Cluster
+For `important: false` articles, `summary`, `full_text_en`, and `category` are empty strings — only `title_en` and `reason` are populated.
+
+**Marked important** (aim 40–60%, when in doubt mark important): military movements/procurement/doctrine, senior national or provincial leadership decisions, bilateral diplomacy and cross-border events, economic policy with international implications, technology with strategic or dual-use potential, significant unrest or politically sensitive events.
+
+**Marked not important:** local infrastructure, sports/entertainment/tourism, routine agriculture/weather/education, advertising, administrative notices, provincial economic statistics with no international angle, party study campaigns, purely domestic trade fairs or signing ceremonies.
+
+The `title_en` and `reason` for all articles (included and excluded) are stored in `temp_articles` and shown in the Today's Feed dashboard — so you can audit filter decisions over time.
+
+**Token budget:**
+| Item | Value |
+|---|---|
+| Input per article | title (~50 chars) + snippet (200 chars) ≈ 250 chars |
+| Total input budget | 8,000 chars → covers ~30 articles safely |
+| `max_tokens` output | 4,096 |
+| Model context window | 24,000 tokens | System ~800 + input ~12k + output ~4k ≈ 16,800 — safe |
+
+### Pass 2 — Cluster
 
 Groups same-topic articles from different newspapers into clusters. When Guangxi Daily and Hainan Daily both cover the same story (e.g. a Xi Jinping speech), they are merged into one cluster with a synthesised headline and combined assessment.
 
@@ -228,9 +216,9 @@ Workers AI returns two envelope shapes depending on whether `max_tokens` is set:
 | Default (no `max_tokens`) | `{ response: string }` | `response.response` |
 | With `max_tokens` | OpenAI-compat `{ choices: [...] }` | `choices[0].message.content` |
 
-All three passes handle both shapes via a shared `extractAiText()` helper. The model is Llama in all cases.
+Both passes handle both shapes via a shared `extractAiText()` helper. The model is Llama in all cases.
 
-If any pass fails to produce a parseable JSON array, a hard fallback fires: Pass 1 treats all articles as important; Pass 2 saves articles with `summary: 'Analysis unavailable.'`; Pass 3 treats each article as its own cluster. No data is ever lost.
+If a pass fails to produce a parseable JSON array, a hard fallback fires: Pass 1 treats all articles as important with stub analysis; Pass 2 treats each article as its own cluster. No data is ever lost.
 
 ---
 
@@ -238,9 +226,9 @@ If any pass fails to produce a parseable JSON array, a hard fallback fires: Pass
 
 | Tier | Table | Content | Duration | AI work |
 |---|---|---|---|---|
-| **Feed** | `temp_articles` | All scraped articles, title + importance reason | ~24h — deleted at next morning run | Pass 1 only |
-| **Briefing** | `intel_articles` + `intel_clusters` | Important articles, fully analysed and clustered | 30 days → auto-cleanup | Pass 1 + 2 + 3 |
-| **Preserved** | `intel_articles` (`is_preserved=1`) | Hand-preserved articles | Permanent | Pass 1 + 2 + 3 |
+| **Feed** | `temp_articles` | All scraped articles, title + importance reason | ~24h — deleted at next morning run | Pass 1 (title_en + reason for all) |
+| **Briefing** | `intel_articles` + `intel_clusters` | Important articles, fully analysed and clustered | 30 days → auto-cleanup | Pass 1 + 2 |
+| **Preserved** | `intel_articles` (`is_preserved=1`) | Hand-preserved articles | Permanent | Pass 1 + 2 |
 
 `temp_articles` is purged at the start of each pipeline run before inserting today's articles, so the feed reflects the current day only.
 
@@ -324,9 +312,9 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 | `full_text` | TEXT | Raw extracted body text |
 | `url` | TEXT | Source article URL |
 | `source` | TEXT | Paper name |
-| `is_important` | INTEGER | 0 = skipped by filter, 1 = sent to Pass 2 |
+| `is_important` | INTEGER | 0 = skipped by filter, 1 = important (goes to intel_articles) |
 | `importance_reason` | TEXT | One-sentence AI explanation for the decision |
-| `cluster_id` | INTEGER | FK → intel_clusters; set after Pass 3 for important articles |
+| `cluster_id` | INTEGER | FK → intel_clusters; backfilled after Pass 2 for important articles |
 | `parse_type` | TEXT | `'full'` = complete body scraped; `'rss'` = RSS title + excerpt only |
 | `created_at` | TEXT | `datetime('now')` default |
 
@@ -336,8 +324,8 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 |---|---|---|
 | `id` | INTEGER PK | autoincrement |
 | `tracking_date` | TEXT | YYYY-MM-DD, CST |
-| `title` | TEXT | Synthesised English headline (Pass 3) |
-| `summary` | TEXT | Combined multi-source assessment (Pass 3) |
+| `title` | TEXT | Synthesised English headline (Pass 2 cluster) |
+| `summary` | TEXT | Combined multi-source assessment (Pass 2 cluster) |
 | `category` | TEXT | Political / Military / Economic / Technology / Social / Foreign Affairs |
 | `sources` | TEXT | JSON array of source names e.g. `["Guangxi Daily","Hainan Daily"]` |
 | `created_at` | TEXT | `datetime('now')` default |
@@ -359,7 +347,7 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 | `id` | INTEGER PK | autoincrement |
 | `tracking_date` | TEXT | FK → intel_briefings |
 | `cluster_id` | INTEGER | FK → intel_clusters (null for legacy articles) |
-| `title` | TEXT | English translation (Pass 2) |
+| `title` | TEXT | English translation (Pass 1) |
 | `summary` | TEXT | 2–3 sentence geopolitical analysis |
 | `full_text` | TEXT | Original Chinese body text |
 | `full_text_en` | TEXT | Complete English translation |
@@ -432,9 +420,8 @@ chinese-intel-pipeline/
 │   │   │   ├── scrapeUrl()              Puppeteer per-source scraper (cron path only)
 │   │   │   ├── extractAiText()          Shared helper — handles both Workers AI response envelopes
 │   │   │   ├── extractJsonArray()       Shared helper — finds best JSON array in raw AI text
-│   │   │   ├── filterArticlesWithAI()   Pass 1 — filter by title, returns importance + reason per article
-│   │   │   ├── analyseWithWorkersAI()   Pass 2 — deep analysis on important subset only
-│   │   │   ├── clusterArticlesWithAI()  Pass 3 — group same-topic articles across sources
+│   │   │   ├── filterAndAnalyseWithAI() Pass 1 — combined filter + analysis using title + 200-char snippet
+│   │   │   ├── clusterArticlesWithAI()  Pass 2 — group same-topic articles across sources
 │   │   │   ├── sendEmail()              Resend + table-layout HTML template (mobile Gmail safe)
 │   │   │   └── runPipeline()            Main orchestrator; fetch() passes fetchOnly=true, scheduled() passes false
 │   │   └── db/schema.ts                 Drizzle ORM schema (intelBriefings, intelArticles, intelClusters, tempArticles)
@@ -522,9 +509,8 @@ Runs the full three-pass pipeline via fetch engine only (Guangxi + Hainan, ~33 a
 |---|---|
 | Scraper — primary | Cloudflare Workers + `@cloudflare/puppeteer` (Browser Rendering) — cron only |
 | Scraper — fetch engine | Native `fetch()` + `HTMLRewriter` (built into Workers runtime) |
-| AI Pass 1 — filter | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — title-only filtering (~4.6k tokens) |
-| AI Pass 2 — analysis | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — deep analysis on important subset |
-| AI Pass 3 — clustering | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — cross-source story grouping |
+| AI Pass 1 — filter + analyse | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — combined filter + analysis using title + snippet (~8k chars) |
+| AI Pass 2 — clustering | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — cross-source story grouping |
 | Database | Cloudflare D1 (SQLite) via Drizzle ORM |
 | Email | Resend API — table-layout HTML template (mobile Gmail compatible) |
 | Dashboard | Next.js 16 App Router via `@opennextjs/cloudflare` |
