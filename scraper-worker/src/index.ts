@@ -917,7 +917,9 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 
 	console.log(`Scrape mode: ${scrapeMode} — ${scrapedArticles.length} total articles.`);
 
-	// ── Step 1: Delete previous day's temp articles (they've had their 24h) ──
+	// ── Step 1: Clear today's temp articles + purge other dates ──
+	// Wipe today's rows first so re-runs (curl + cron on same day) don't accumulate duplicates.
+	await env.DB.prepare(`DELETE FROM temp_articles WHERE tracking_date = ?`).bind(trackingDate).run();
 	await env.DB.prepare(`DELETE FROM temp_articles WHERE tracking_date != ?`).bind(trackingDate).run();
 
 	// ── Step 2: Combined pass — filter + analyse all articles in one AI call ──
@@ -976,7 +978,11 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 	console.log(`Pass 3: clustering ${articlesWithSource.length} articles…`);
 	const clusters = await clusterArticlesWithAI(env.AI, articlesWithSource);
 
-	// ── Step 7: Insert clusters, then articles with cluster_id set ──
+	// ── Step 7: Clear today's intel data then re-insert fresh ──
+	// Re-runs on the same day (curl + cron) would otherwise stack duplicate clusters/articles.
+	// Preserved articles are kept; their cluster_id becomes stale but they remain visible in Archive.
+	await env.DB.prepare(`DELETE FROM intel_articles WHERE tracking_date = ? AND is_preserved = 0`).bind(trackingDate).run();
+	await env.DB.prepare(`DELETE FROM intel_clusters WHERE tracking_date = ?`).bind(trackingDate).run();
 	for (const cluster of clusters) {
 		const clusterSources = [
 			...new Set(cluster.article_indices.map(i => importantScraped[i]?.source).filter(Boolean) as string[]),
