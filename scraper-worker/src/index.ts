@@ -126,8 +126,7 @@ async function scrapeGuangxi(yyyy: string, mm: string, dd: string): Promise<Scra
 	console.log(`[GUANGXI] Found ${links.length} article links`);
 
 	const articles: ScrapedArticle[] = [];
-	// Limit to 20 articles to stay within AI context budget
-	for (const { code, xuhao, title } of links.slice(0, 6)) {
+	for (const { code, xuhao, title } of links.slice(0, 8)) {
 		const articleUrl = `${base}/json/interface/epaper/api.php?name=gxrb&date=${date}&code=${code}&xuhao=${xuhao}`;
 		const html = await fetchHtml(articleUrl, indexUrl);
 		if (!html) continue;
@@ -211,23 +210,22 @@ async function scrapeHainan(nodeUrl: string): Promise<ScrapedArticle[]> {
 
 // -- Yunnan Daily: main portal (www.yndaily.com) — article pages live on this domain
 // and are NOT WAF-blocked (only yndaily.yunnan.cn epaper is blocked).
-// Article URLs follow: /html/{yyyy}/yaowenyunnan_{mmdd}/{id}.html
-// Index page lists recent articles as <a href="…"> with title text.
+// Article URLs follow: /html/{yyyy}/yaowenyunnan_{mmdd}/{id}.html (relative hrefs on homepage)
 async function scrapeYunnan(yyyy: string, mm: string, dd: string): Promise<ScrapedArticle[]> {
 	const base = 'https://www.yndaily.com';
 	const indexHtml = await fetchHtml(base, base + '/');
 	if (!indexHtml) return [];
 
-	// Match article links on the same domain — exclude nav/utility pages
+	// Homepage serves relative hrefs like /html/2026/yaowenyunnan_0627/143388.html
+	// Match relative paths under /html/{yyyy}/ and resolve to absolute URLs
 	const articleRe = new RegExp(
-		`href=["'](${base}/html/${yyyy}/[^"']+\\.html)["'][^>]*>([^<]{5,120})`,
+		`href=["'](/html/${yyyy}/[^"']+\\.html)["'][^>]*>([^<]{5,120})`,
 		'g',
 	);
 	const seen = new Set<string>();
 	const links: { url: string; title: string }[] = [];
 	for (const m of indexHtml.matchAll(articleRe)) {
-		const url = m[1];
-		// Skip archive/utility paths
+		const url = base + m[1];
 		if (/about|contact|advert|mail|paper/.test(url)) continue;
 		if (!seen.has(url)) {
 			seen.add(url);
@@ -284,6 +282,77 @@ async function scrapeHunan(yyyy: string, mm: string): Promise<ScrapedArticle[]> 
 	return articles;
 }
 
+// -- Nanfang Daily: static epaper (epaper.southcn.com) with content links on epaper.nfnews.com
+// Index: https://epaper.southcn.com/nfdaily/html/{yyyymm}/{dd}/node_A01.html
+// Articles: https://epaper.nfnews.com/nfdaily/html/{yyyymm}/{dd}/content_*.html (absolute links)
+async function scrapeNanfang(yyyy: string, mm: string, dd: string): Promise<ScrapedArticle[]> {
+	const yyyymm = `${yyyy}${mm}`;
+	const indexUrl = `https://epaper.southcn.com/nfdaily/html/${yyyymm}/${dd}/node_A01.html`;
+	const indexHtml = await fetchHtml(indexUrl, 'https://epaper.southcn.com/');
+	if (!indexHtml) return [];
+
+	// Content links are absolute URLs on epaper.nfnews.com
+	const contentRe = /https:\/\/epaper\.nfnews\.com\/nfdaily\/html\/[^"']+\/content_\d+\.html/g;
+	const seen = new Set<string>();
+	const articleUrls: string[] = [];
+	for (const m of indexHtml.matchAll(contentRe)) {
+		if (!seen.has(m[0])) {
+			seen.add(m[0]);
+			articleUrls.push(m[0]);
+		}
+	}
+	console.log(`[NANFANG] Found ${articleUrls.length} article links`);
+
+	const articles: ScrapedArticle[] = [];
+	for (const url of articleUrls.slice(0, 6)) {
+		const html = await fetchHtml(url, indexUrl);
+		if (!html) continue;
+		const titleMatch = html.match(/<title>([^<_]+)/i);
+		const title = titleMatch?.[1]?.trim() || url;
+		const text = await extractText(html);
+		if (text.length < 100) continue;
+		articles.push({ title, full_text: text, url, source: 'Nanfang Daily' });
+	}
+	console.log(`[NANFANG] Scraped ${articles.length} articles with content`);
+	return articles;
+}
+
+// -- Fujian Daily: static epaper with content article links
+// Index: https://fjrb.fjdaily.com/pc/col/{yyyymm}/{dd}/node_01.html
+// Articles: relative ../../../con/{yyyymm}/{dd}/content_*.html → https://fjrb.fjdaily.com/pc/con/...
+async function scrapeFujian(yyyy: string, mm: string, dd: string): Promise<ScrapedArticle[]> {
+	const yyyymm = `${yyyy}${mm}`;
+	const indexUrl = `https://fjrb.fjdaily.com/pc/col/${yyyymm}/${dd}/node_01.html`;
+	const indexHtml = await fetchHtml(indexUrl, 'https://fjrb.fjdaily.com/');
+	if (!indexHtml) return [];
+
+	// Relative links: ../../../con/{yyyymm}/{dd}/content_*.html → /pc/con/{yyyymm}/{dd}/content_*.html
+	const contentRe = new RegExp(`\\.\\./\\.\\./\\.\\./con/${yyyymm}/${dd}/(content_\\d+\\.html)`, 'g');
+	const seen = new Set<string>();
+	const articleUrls: string[] = [];
+	for (const m of indexHtml.matchAll(contentRe)) {
+		const url = `https://fjrb.fjdaily.com/pc/con/${yyyymm}/${dd}/${m[1]}`;
+		if (!seen.has(url)) {
+			seen.add(url);
+			articleUrls.push(url);
+		}
+	}
+	console.log(`[FUJIAN] Found ${articleUrls.length} article links`);
+
+	const articles: ScrapedArticle[] = [];
+	for (const url of articleUrls.slice(0, 6)) {
+		const html = await fetchHtml(url, indexUrl);
+		if (!html) continue;
+		const titleMatch = html.match(/<title>([^<\-–—]+)/i);
+		const title = titleMatch?.[1]?.trim() || url;
+		const text = await extractText(html);
+		if (text.length < 100) continue;
+		articles.push({ title, full_text: text, url, source: 'Fujian Daily' });
+	}
+	console.log(`[FUJIAN] Scraped ${articles.length} articles with content`);
+	return articles;
+}
+
 // -- Generic HTMLRewriter fallback for sources without a known API pattern
 async function scrapeGeneric(url: string, sourceName: string): Promise<ScrapedArticle[]> {
 	const html = await fetchHtml(url, new URL(url).origin + '/');
@@ -315,11 +384,9 @@ interface RssConfig {
 	path: string;   // RSSHub route path e.g. /hnrb
 }
 
-// Hunan Daily now has a dedicated fetch scraper (scrapeHunan) — no RSS needed.
-// Nanfang Daily RSS kept as fallback; the static epaper URL is tried via scrapeGeneric first.
-const RSS_CONFIGS: RssConfig[] = [
-	{ name: 'Nanfang Daily', path: '/southcn/nfapp/column/38' },
-];
+// All sources now have dedicated scrapers; RSS kept only as last-resort for sources that
+// lose their static URL (currently none — configs array left empty but infrastructure preserved).
+const RSS_CONFIGS: RssConfig[] = [];
 
 // Extract text from an XML tag, handling CDATA wrappers.
 function xmlText(xml: string, tag: string): string {
@@ -423,22 +490,24 @@ async function enrichRssArticles(articles: ScrapedArticle[]): Promise<ScrapedArt
 }
 
 async function fetchAndParseSources(sources: Source[], yyyy: string, mm: string, dd: string): Promise<ScrapedArticle[]> {
-	// Dedicated scrapers: Guangxi (epaper API), Hainan (two-level static HTML), Hunan (article portal).
-	// Generic HTMLRewriter for: Yunnan, Sichuan, Fujian, Nanfang — all now have static-HTML URLs.
-	// RSS fallback kept for Nanfang only (epaper may be thin; RSS adds more article variety).
-	const dedicatedNames = new Set(['Yunnan Daily', 'Guangxi Daily', 'Hainan Daily', 'Hunan Daily']);
-	const rssSourceNames = new Set(RSS_CONFIGS.map(c => c.name));
+	// Dedicated scrapers for all 7 sources.
+	// Sichuan remains on scrapeGeneric (JS-SPA, no static article URL pattern found).
+	const dedicatedNames = new Set([
+		'Yunnan Daily', 'Guangxi Daily', 'Hainan Daily',
+		'Hunan Daily', 'Nanfang Daily', 'Fujian Daily',
+	]);
 	const results = await Promise.allSettled([
 		scrapeYunnan(yyyy, mm, dd),
 		scrapeGuangxi(yyyy, mm, dd),
 		scrapeHainan(sources.find(s => s.name === 'Hainan Daily')!.url),
 		scrapeHunan(yyyy, mm),
-		// Generic fetch fallback for sources without a dedicated scraper or RSS route
+		scrapeNanfang(yyyy, mm, dd),
+		scrapeFujian(yyyy, mm, dd),
+		// Generic fallback for Sichuan (JS-SPA — likely returns empty, Puppeteer covers it on cron)
 		...sources
-			.filter(s => !dedicatedNames.has(s.name) && !rssSourceNames.has(s.name))
+			.filter(s => !dedicatedNames.has(s.name))
 			.map(s => scrapeGeneric(s.url, s.name)),
-		// RSS fallback for Nanfang (kept as supplement to the static epaper scrape)
-		// RSS fallback for JS-rendered sources with confirmed RSSHub routes
+		// RSS kept as infrastructure — currently no active configs
 		...RSS_CONFIGS.map(cfg => scrapeRss(cfg)),
 	]);
 	return results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
@@ -618,13 +687,13 @@ interface AiArticle {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function filterAndAnalyseWithAI(ai: any, articles: ScrapedArticle[]): Promise<CombinedDecision[]> {
-	// Build input article-by-article: title + 200-char snippet per article.
-	// Budget 8,000 chars covers ~30 articles and stays safely within the model context window.
+	// Build input article-by-article: title + 250-char snippet per article.
+	// Budget 10,000 chars covers ~40 articles and stays safely within the model context window.
 	const inputArticles: { index: number; title: string; snippet: string }[] = [];
-	let budget = 8_000;
+	let budget = 10_000;
 	for (let i = 0; i < articles.length; i++) {
 		const a = articles[i];
-		const entry = { index: i, title: a.title, snippet: a.full_text.slice(0, 200) };
+		const entry = { index: i, title: a.title, snippet: a.full_text.slice(0, 250) };
 		const len = JSON.stringify(entry).length + 2;
 		if (budget - len < 0) break;
 		inputArticles.push(entry);

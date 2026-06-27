@@ -111,35 +111,25 @@ Full headless Chromium via Cloudflare Browser Rendering. Navigates each source's
 
 ### Tier 2 — Fetch Engine (HTTP trigger + cron fallback)
 
-Native `fetch()` + `HTMLRewriter` — no npm dependency, no browser, no quota. Runs in parallel: dedicated scrapers for Guangxi and Hainan, generic HTMLRewriter for the remaining three (Yunnan, Sichuan, Fujian — all return `[]` due to JS rendering or 403), and RSS scrapers for Hunan and Nanfang.
+Native `fetch()` + `HTMLRewriter` — no npm dependency, no browser, no quota. Runs in parallel: dedicated scrapers for 6 of 7 sources; generic HTMLRewriter for Sichuan (JS SPA). Worker CPU limit set to 30 s in `wrangler.jsonc` — since the pipeline is I/O-bound (all time is spent waiting on fetch/AI/D1, not CPU), this headroom matters only if Cloudflare ever enforces stricter limits.
 
 #### What the fetch engine can scrape
 
 | Source | Strategy | Detail |
 |---|---|---|
-| **Guangxi Daily** | Dedicated API scraper ✅ | Fetches the epaper index (`ssw.gxrb.com.cn/json/interface/epaper/api.php?`), extracts article links from inline `<area>` map tags (`code` + `xuhao` params), fetches each article individually. Skips editor credits (`责任编辑`, `客户端`, `版责`, `广西云`). Yields **~19 articles** per run. |
-| **Hainan Daily** | Static HTML parser ✅ | Fetches the node page (`node_58471.htm`), parses inline JS `var map_NODE = { l: ["content_*.htm"] }` to get article file list, fetches each file. Yields **~14 articles** per run. |
-| **Hunan Daily** | RSS (RSSHub `/hnrb`) ✅ | Title + RSS excerpt only — no full body text. Stored with `parse_type = 'rss'`. Dashboard shows amber **RSS** badge and prominent source link. |
-| **Nanfang Daily** | RSS (RSSHub `/southcn/nfapp/column/38`) ✅ | Title + RSS excerpt only. Same RSS treatment as Hunan Daily. |
-| **Yunnan Daily** | Generic HTMLRewriter ❌ | Returns HTTP 403 — server blocks non-browser requests regardless of UA spoofing. Puppeteer only. |
-| **Sichuan Daily** | Generic HTMLRewriter ❌ | JS-rendered SPA — `fetch()` receives a shell with `<noscript>` content only. Puppeteer only. |
-| **Fujian Daily** | Generic HTMLRewriter ❌ | JS-rendered — returns ~22 chars of usable text. Puppeteer only. |
+| **Guangxi Daily** | Dedicated API scraper ✅ | Fetches the epaper index (`ssw.gxrb.com.cn/json/interface/epaper/api.php?`), extracts article links from `<area>` map tags (`code` + `xuhao` params), fetches each article. Skips editor credits. Yields **~8 articles** per run. |
+| **Hainan Daily** | Static HTML parser ✅ | Fetches the node page (`node_58471.htm`), parses inline JS `var map_NODE = { l: ["content_*.htm"] }` to get article file list, fetches each file. Two-level drill: short text → section page → articles. Yields **~4–8 articles** per run. |
+| **Hunan Daily** | Dedicated portal scraper ✅ | Fetches `hnrb.hunantoday.cn`, extracts article links matching `/{yyyy}{mm}/` path prefix, fetches each. Full body text — no RSS needed. Yields **~4–6 articles** per run. |
+| **Yunnan Daily** | Dedicated portal scraper ✅ | Fetches `www.yndaily.com`, extracts relative `/html/{yyyy}/…` links (bug fixed: earlier code required full absolute URLs), fetches each. Yields **~5 articles** per run. |
+| **Nanfang Daily** | Dedicated static epaper scraper ✅ | Fetches `epaper.southcn.com/nfdaily/html/{yyyymm}/{dd}/node_A01.html`, extracts absolute `epaper.nfnews.com/…/content_*.html` article links, fetches each. Full body text. Yields **~6 articles** per run. |
+| **Fujian Daily** | Dedicated static epaper scraper ✅ | Fetches `fjrb.fjdaily.com/pc/col/{yyyymm}/{dd}/node_01.html`, resolves relative `../../../con/{yyyymm}/{dd}/content_*.html` links, fetches each. Full body text. Yields **~6 articles** per run. |
+| **Sichuan Daily** | Generic HTMLRewriter ❌ | JS-rendered SPA — `fetch()` receives a shell with no article content. Puppeteer only. |
 
-When only the fetch engine runs (HTTP trigger or Puppeteer failure), Guangxi + Hainan provide **~33 full articles** plus Hunan and Nanfang via RSS. The 3 remaining sources (Yunnan, Sichuan, Fujian) are covered by tomorrow's cron.
+When only the fetch engine runs (HTTP trigger or Puppeteer failure), 6 sources provide **~33–40 full-text articles**. Sichuan is covered by the next cron run.
 
 #### RSS scraper
 
-RSS sources use a shared `scrapeRss()` function:
-- Tries `rsshub.rssforever.com` first, then `rsshub.app` as fallback
-- 8-second timeout per attempt — fails gracefully with `[]` if both instances are unreachable
-- Parses RSS 2.0 and Atom feeds; handles `<![CDATA[...]]>` wrappers and inline HTML in descriptions
-- Articles stored with `parse_type = 'rss'` in both `temp_articles` and `intel_articles`
-- Pass 1 analysis runs normally on important RSS articles — the AI translates and summarises the excerpt it receives; `full_text_en` reflects that limited input
-
-**Dashboard treatment of RSS articles:**
-- Amber **RSS** badge visible in Today's Feed, Intel Briefing drawer, and Archive cards
-- Instead of "Full Translation" block, the drawer shows an amber notice box explaining the limitation plus a "Read full article →" link to the original source
-- Users can use the source link + browser built-in translate (e.g. Chrome's page translate) to read the complete Chinese original
+The `scrapeRss()` infrastructure is kept (tries `rsshub.rssforever.com` then `rsshub.app`, 8 s timeout, parses RSS 2.0 and Atom) but `RSS_CONFIGS` is currently empty — all sources now have working dedicated fetch scrapers. The RSS path remains available if a source loses its static URL in future.
 
 #### Text extraction
 
@@ -186,10 +176,10 @@ The `title_en` and `reason` for all articles (included and excluded) are stored 
 **Token budget:**
 | Item | Value |
 |---|---|
-| Input per article | title (~50 chars) + snippet (200 chars) ≈ 250 chars |
-| Total input budget | 8,000 chars → covers ~30 articles safely |
+| Input per article | title (~50 chars) + snippet (250 chars) ≈ 300 chars |
+| Total input budget | 10,000 chars → covers ~40 articles safely |
 | `max_tokens` output | 4,096 |
-| Model context window | 24,000 tokens | System ~800 + input ~12k + output ~4k ≈ 16,800 — safe |
+| Model context window | 24,000 tokens | System ~800 + input ~10k + output ~4k ≈ 14,800 — safe |
 
 ### Pass 2 — Cluster
 
@@ -289,13 +279,13 @@ Email is **disabled by default** (`ENABLE_EMAIL` must be set to `"true"` as a Wo
 
 | Paper | Province | Fetch engine | Puppeteer |
 |---|---|---|---|
-| Guangxi Daily | Guangxi | ✅ ~19 articles (full text) via epaper API | ✅ |
-| Hainan Daily | Hainan | ✅ ~14 articles (full text) via static HTML | ✅ |
-| Hunan Daily | Hunan | ⚡ RSS via RSSHub `/hnrb` (title + excerpt) | ✅ |
-| Nanfang Daily | Guangdong | ⚡ RSS via RSSHub `/southcn/nfapp/column/38` (title + excerpt) | ✅ |
-| Yunnan Daily | Yunnan | ❌ 403 Forbidden | ✅ |
-| Sichuan Daily | Sichuan | ❌ JS-rendered SPA | ✅ |
-| Fujian Daily | Fujian | ❌ JS-rendered | ✅ |
+| Guangxi Daily | Guangxi | ✅ ~8 articles (full text) via epaper API | ✅ |
+| Hainan Daily | Hainan | ✅ ~4–8 articles (full text) via static HTML two-level parser | ✅ |
+| Hunan Daily | Hunan | ✅ ~4–6 articles (full text) via portal scraper (`hnrb.hunantoday.cn`) | ✅ |
+| Yunnan Daily | Yunnan | ✅ ~5 articles (full text) via portal scraper (`www.yndaily.com`) | ✅ |
+| Nanfang Daily | Guangdong | ✅ ~6 articles (full text) via static epaper (`epaper.southcn.com`) | ✅ |
+| Fujian Daily | Fujian | ✅ ~6 articles (full text) via static epaper (`fjrb.fjdaily.com`) | ✅ |
+| Sichuan Daily | Sichuan | ❌ JS-rendered SPA — fetch returns empty shell | ✅ |
 
 ---
 
@@ -409,18 +399,22 @@ chinese-intel-pipeline/
 │   │   ├── index.ts                     # All pipeline logic
 │   │   │   ├── fetchHtml()              fetch wrapper with UA + Referer
 │   │   │   ├── extractText()            HTMLRewriter — h1–h4/p only; blocks script/style/nav/header/footer/aside/noscript
-│   │   │   ├── scrapeGuangxi()          Epaper API scraper — index → article links → individual fetch
-│   │   │   ├── scrapeHainan()           Static HTML parser — node page JS var → content files → fetch
-│   │   │   ├── scrapeGeneric()          HTMLRewriter fallback — returns [] for JS-rendered pages
+│   │   │   ├── scrapeGuangxi()          Epaper API scraper — index → article links → individual fetch (~8 articles)
+│   │   │   ├── scrapeHainan()           Static HTML parser — node page JS var → two-level content files → fetch
+│   │   │   ├── scrapeHunan()            Portal scraper — hnrb.hunantoday.cn article links → fetch (~4–6 articles)
+│   │   │   ├── scrapeYunnan()           Portal scraper — www.yndaily.com relative hrefs → fetch (~5 articles)
+│   │   │   ├── scrapeNanfang()          Static epaper — southcn.com node_A01 → nfnews.com content links → fetch (~6)
+│   │   │   ├── scrapeFujian()           Static epaper — fjdaily.com node_01 → relative content links → fetch (~6)
+│   │   │   ├── scrapeGeneric()          HTMLRewriter fallback — Sichuan only; returns [] for JS-rendered pages
 │   │   │   ├── xmlText()               Extract text from XML tag; handles CDATA wrappers
 │   │   │   ├── stripHtml()             Strip HTML tags from RSS description strings
-│   │   │   ├── parseRssXml()           Parse RSS 2.0 / Atom feed XML → ScrapedArticle[] with parse_type='rss'
-│   │   │   ├── scrapeRss()             Fetch RSSHub feed with 8s timeout; tries RSSHUB_INSTANCES in order
-│   │   │   ├── fetchAndParseSources()   Orchestrates all fetch + RSS scrapers in parallel
+│   │   │   ├── parseRssXml()           Parse RSS 2.0 / Atom feed XML → ScrapedArticle[]
+│   │   │   ├── scrapeRss()             Fetch RSSHub feed with 8s timeout; RSS_CONFIGS currently empty
+│   │   │   ├── fetchAndParseSources()   Orchestrates all 6 dedicated scrapers + Sichuan generic in parallel
 │   │   │   ├── scrapeUrl()              Puppeteer per-source scraper (cron path only)
 │   │   │   ├── extractAiText()          Shared helper — handles both Workers AI response envelopes
 │   │   │   ├── extractJsonArray()       Shared helper — finds best JSON array in raw AI text
-│   │   │   ├── filterAndAnalyseWithAI() Pass 1 — combined filter + analysis using title + 200-char snippet
+│   │   │   ├── filterAndAnalyseWithAI() Pass 1 — combined filter + analysis using title + 250-char snippet (~40 articles)
 │   │   │   ├── clusterArticlesWithAI()  Pass 2 — group same-topic articles across sources
 │   │   │   ├── sendEmail()              Resend + table-layout HTML template (mobile Gmail safe)
 │   │   │   └── runPipeline()            Main orchestrator; fetch() passes fetchOnly=true, scheduled() passes false

@@ -142,22 +142,22 @@ Scraping Hainan Daily...   HTTP 200 —  266 chars — 10.6s
 - Puppeteer adds nothing here. The static epaper API returns proper HTML with `<area>` map tags listing all article links.
 - Yields ~19 full-text articles per run.
 
-**Hunan Daily — ❌ Headless detection (7 chars)**
-- Returns HTTP 200 but body is literally 7 characters after networkidle2, 5-second wait, and scroll.
-- The app detects headless mode and renders nothing. This is not a network block — it is client-side detection.
-- Real browser (e.g., Chrome with DevTools closed, or Claude's web browsing tool) can access this fine.
-- RSS via RSSHub (`/hnrb`) is the only reliable automated route. After our `enrichRssArticles` fix, the pipeline also attempts to fetch each article's source URL for full text.
+**Hunan Daily — ❌ Headless detection (7 chars) at old SPA URL — ✅ fixed via portal URL**
+- The original SPA (`h5cgi.voc.com.cn/hnrbdzb/`) returns 7 chars — client-side headless detection.
+- `hnrb.hunantoday.cn` (the main portal) is fully static: article links follow `/{yyyy}{mm}/TIMESTAMP.html` pattern.
+- Dedicated `scrapeHunan()` fetches the portal index, extracts same-month article links, fetches each individually. Full body text, no RSS needed. Yields ~4–6 articles per run.
 
-**Fujian Daily — ✅ Accessible (1012 chars)**
+**Fujian Daily — ✅ Accessible (1012 chars) — dedicated scraper added 2026-06-27**
 - Static HTML. Section node pages (`node_01.html` through `node_08.html`) load article headline lists.
 - Sub-links are labelled sections: `(01) 要闻`, `(02) 要闻`, `(03) 经济`, `(04) 社会`, `(05) 文化/科技`, `(06) 时事`, `(07) 海峡`, `(08) 深读`.
-- Important: the generic HTMLRewriter fetch scraper is actually sufficient here — no Puppeteer needed.
-- Preview from page 01: `"福建日报 (01) 要闻 … 同心同德 兴民兴邦 以扎实举措推进农业农村现代化 用勤劳和智慧创造更加"` — genuine article content.
+- Article links are relative: `../../../con/{yyyymm}/{dd}/content_XXXXXX.html` → resolves to `https://fjrb.fjdaily.com/pc/con/…`.
+- Individual article pages have full Chinese body text in `<p>` tags — no JS required. Yields ~6 articles from node_01.
 
-**Nanfang Daily — ⚠️ SPA shell (1264 chars after JS wait)**
-- Returns HTTP 200; after a 5-second explicit wait the body grows from ~0 to 1264 chars.
-- Content is the SPA navigation shell plus some article metadata — not full article body text.
-- RSSHub (`/southcn/nfapp/column/38`) provides title + excerpt reliably. `enrichRssArticles` fetches full text from each article URL on a best-effort basis.
+**Nanfang Daily — ✅ Static epaper accessible — dedicated scraper added 2026-06-27**
+- `epaper.southcn.com/nfdaily/html/{yyyymm}/{dd}/node_A01.html` is static HTML listing absolute `epaper.nfnews.com/nfdaily/html/{yyyymm}/{dd}/content_XXXXXXXX.html` article links.
+- Each content page has full article body text. Yields ~6-7 articles per run.
+- Previous approach (RSSHub) was unreliable — both instances frequently returned 503 or empty feeds.
+- Note: index is on `southcn.com` but content links are on `nfnews.com` (same publisher, two domains).
 
 **Hainan Daily — ⚠️ Navigation only (266 chars)**
 - Returns HTTP 200; body contains section navigation HTML but not article body text.
@@ -175,18 +175,37 @@ The current primary strategy for the pipeline. No browser dependency, no quota, 
 
 | Source | Method | Yield |
 |--------|--------|-------|
-| Guangxi Daily | Dedicated epaper API scraper | ~19 full articles |
-| Hainan Daily | Two-level `l:[...]` static parser | ~14 full articles |
-| Fujian Daily | Generic HTMLRewriter | 1 combined article (section headlines) |
-| Hunan Daily | RSS (RSSHub `/hnrb`) + URL enrichment | ~15 articles; tries full fetch |
-| Nanfang Daily | RSS (RSSHub `/southcn/nfapp/column/38`) + URL enrichment | ~10 articles; tries full fetch |
+| Guangxi Daily | Dedicated epaper API scraper | ~8 full articles |
+| Hainan Daily | Two-level `l:[...]` static parser | ~4–8 full articles |
+| Hunan Daily | Dedicated portal scraper (`hnrb.hunantoday.cn`) | ~4–6 full articles |
+| Yunnan Daily | Dedicated portal scraper (`www.yndaily.com`) — relative href fix | ~5 full articles |
+| Nanfang Daily | Dedicated static epaper scraper (`epaper.southcn.com` → `epaper.nfnews.com`) | ~6 full articles |
+| Fujian Daily | Dedicated static epaper scraper (`fjrb.fjdaily.com/pc/col/…/node_01.html`) | ~6 full articles |
+
+**Total fetch-engine yield: ~33–40 full-text articles** from 6 of 7 sources.
 
 ### What does not work
 
 | Source | Reason |
 |--------|--------|
-| Yunnan Daily | WAF 403 on all non-browser requests from non-whitelisted IPs |
-| Sichuan Daily | SPA with no static fallback; no RSS route found |
+| Sichuan Daily | JS SPA — `fetch()` returns empty shell; no static article URL pattern; no RSS route found |
+
+### Key bugs fixed (2026-06-27)
+
+**Yunnan Daily — relative href regex bug**
+- Old regex required full absolute URL in `href`: `href=["'](https://www.yndaily.com/html/…)["']`
+- Homepage actually serves relative hrefs: `href="/html/2026/yaowenyunnan_0627/143388.html"`
+- Result: 0 articles scraped despite the site being accessible. Fixed by matching `/html/{yyyy}/…` and prepending `https://www.yndaily.com`.
+
+**Nanfang Daily — RSS was the bottleneck, not the site**
+- Both RSSHub instances (`rsshub.rssforever.com`, `rsshub.app`) frequently fail or return stale feeds.
+- `epaper.southcn.com/nfdaily/html/{yyyymm}/{dd}/node_A01.html` is fully accessible via plain fetch and lists absolute `epaper.nfnews.com/…/content_*.html` article links.
+- New dedicated `scrapeNanfang()` replaces the RSS route entirely with static HTML scraping.
+
+**Fujian Daily — scrapeGeneric was wrong tool**
+- `scrapeGeneric()` fetches the node_01.html page and runs HTMLRewriter, returning just the page `<title>` ("Fujian Daily Digital Edition") because the `<p>` tags with real content aren't on the index page.
+- The index page lists relative article links (`../../../con/{yyyymm}/{dd}/content_*.html`) which resolve to `https://fjrb.fjdaily.com/pc/con/…`.
+- New dedicated `scrapeFujian()` extracts and resolves those links, fetches each article individually.
 
 ---
 
@@ -221,6 +240,13 @@ Possibly for Yunnan Daily, whose WAF may whitelist domestic IP ranges. However:
 | 2026-06-25 | Two-level depth for `scrapeHainan()` — drill through section pages | Content files in node_58471 are section pages, not articles; need one more level |
 | 2026-06-25 | Raised minimum article text threshold 50 → 200 chars | Section index pages (nav + headlines only) were passing to AI filter and polluting Today's Feed |
 | 2026-06-25 | Decided against Chinese residential proxies | CF Workers can't configure proxies; Hunan/Sichuan wouldn't benefit |
+| 2026-06-26 | Merged Pass 1 (title-only filter) + Pass 2 (analysis) into single combined pass | Title-only filter under-flagged articles (13 vs 2); snippet context needed at filter stage |
+| 2026-06-26 | Fixed duplicate rows on same-day re-runs | DELETE today's rows before re-inserting; cron + curl on same day was stacking 85 rows for 17 URLs |
+| 2026-06-27 | Fixed Yunnan regex — relative hrefs not matched | Regex required full absolute URL; homepage serves `/html/2026/…` relative hrefs → 0 articles |
+| 2026-06-27 | Replaced Nanfang RSS with dedicated `scrapeNanfang()` | Both RSSHub instances fail frequently; static `epaper.southcn.com` works perfectly via fetch |
+| 2026-06-27 | Added dedicated `scrapeFujian()` | `scrapeGeneric` returned page title only; node_01.html has `content_*.html` article links |
+| 2026-06-27 | Bumped Guangxi cap 6 → 8 articles; AI snippet 200 → 250 chars; budget 8k → 10k chars | Confirmed subrequest headroom (~46/50); D1 queries have separate limit (50/invocation) |
+| 2026-06-27 | Added `limits.cpu_ms: 30000` to wrangler.jsonc | Explicit headroom for CPU; pipeline is I/O-bound so limit was never the constraint |
 
 ---
 
@@ -249,7 +275,7 @@ Searching each newspaper name on Google revealed significantly better entry poin
 
 | Source | Old URL | New URL | Result |
 |--------|---------|---------|--------|
-| Yunnan Daily | `yndaily.yunnan.cn/html/…` (WAF 403) | `www.yndaily.com` | 200, article titles visible but links still go to WAF-blocked epaper |
+| Yunnan Daily | `yndaily.yunnan.cn/html/…` (WAF 403) | `www.yndaily.com` | 200, relative `/html/{yyyy}/…` article hrefs — **regex bug fixed 2026-06-27** (was matching absolute URLs only → 0 articles) |
 | Sichuan Daily | `4g.scdaily.cn/wap/…` (123 chars, SPA) | `www.scdaily.cn` | **200, 106 semantic text blocks** — generic scraper works perfectly |
 | Hunan Daily | `h5cgi.voc.com.cn/hnrbdzb/#/` (7 chars, headless detection) | `hnrb.hunantoday.cn` | **200, static HTML portal with direct article links** — dedicated scraper added |
 | Fujian Daily | `fjrb.fjdaily.com/pad/col/…` (mobile) | `fjrb.fjdaily.com/pc/col/…` | Both work; PC has cleaner structure |
