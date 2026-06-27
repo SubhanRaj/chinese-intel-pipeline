@@ -111,7 +111,7 @@ dashboard/src/app/admin/          — (planned) user management panel (admin rol
 | Tier | Who | Login method | What they can do |
 |---|---|---|---|
 | Anonymous | Everyone | — | View briefings, feed, archive, toggle dark mode |
-| User | Commissioner (invited) | Magic link (email) | Everything above + preserve articles + toggle own email notifications |
+| User | Invited user | Magic link (email) | Everything above + preserve articles + toggle own email notifications |
 | Admin | Subhan | Magic link + optional TOTP | Everything above + delete articles/clusters + manage users via `/admin` panel |
 
 ### Magic link flow (passwordless)
