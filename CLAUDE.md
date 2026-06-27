@@ -59,7 +59,7 @@ RSS infrastructure (`scrapeRss`, `parseRssXml`, `RSS_CONFIGS`) is kept but `RSS_
 
 ```
 scraper-worker/src/index.ts   — all pipeline logic (scraping, AI, storage, email)
-scraper-worker/wrangler.jsonc — bindings (D1, BROWSER, AI), cron, limits.cpu_ms=30000
+scraper-worker/wrangler.jsonc — bindings (D1, BROWSER, AI), cron 30 1 * * *
 dashboard/src/app/page.tsx    — server component, DB queries
 dashboard/src/components/IntelViewer.tsx — all client UI
 dashboard/src/app/actions.ts  — server actions (preserve/delete)

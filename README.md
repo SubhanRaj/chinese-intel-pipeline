@@ -111,7 +111,7 @@ Full headless Chromium via Cloudflare Browser Rendering. Navigates each source's
 
 ### Tier 2 — Fetch Engine (HTTP trigger + cron fallback)
 
-Native `fetch()` + `HTMLRewriter` — no npm dependency, no browser, no quota. Runs in parallel: dedicated scrapers for 6 of 7 sources; generic HTMLRewriter for Sichuan (JS SPA). Worker CPU limit set to 30 s in `wrangler.jsonc` — since the pipeline is I/O-bound (all time is spent waiting on fetch/AI/D1, not CPU), this headroom matters only if Cloudflare ever enforces stricter limits.
+Native `fetch()` + `HTMLRewriter` — no npm dependency, no browser, no quota. Runs in parallel: dedicated scrapers for 6 of 7 sources; generic HTMLRewriter for Sichuan (JS SPA). The pipeline is I/O-bound (all time is waiting on fetch/AI/D1 I/O, not CPU), so the 10 ms free-plan CPU limit is never reached in practice.
 
 #### What the fetch engine can scrape
 

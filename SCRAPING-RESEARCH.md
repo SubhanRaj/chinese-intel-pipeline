@@ -246,7 +246,7 @@ Possibly for Yunnan Daily, whose WAF may whitelist domestic IP ranges. However:
 | 2026-06-27 | Replaced Nanfang RSS with dedicated `scrapeNanfang()` | Both RSSHub instances fail frequently; static `epaper.southcn.com` works perfectly via fetch |
 | 2026-06-27 | Added dedicated `scrapeFujian()` | `scrapeGeneric` returned page title only; node_01.html has `content_*.html` article links |
 | 2026-06-27 | Bumped Guangxi cap 6 → 8 articles; AI snippet 200 → 250 chars; budget 8k → 10k chars | Confirmed subrequest headroom (~46/50); D1 queries have separate limit (50/invocation) |
-| 2026-06-27 | Added `limits.cpu_ms: 30000` to wrangler.jsonc | Explicit headroom for CPU; pipeline is I/O-bound so limit was never the constraint |
+| 2026-06-27 | `limits.cpu_ms` not supported on free plan | Tried adding 30 s CPU limit; CF API rejected it (code 100328). Not needed — pipeline is I/O-bound |
 
 ---
 
