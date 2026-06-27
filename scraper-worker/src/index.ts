@@ -1,11 +1,9 @@
-import puppeteer from '@cloudflare/puppeteer';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, sql as drizzleSql } from 'drizzle-orm';
 import { intelBriefings, intelArticles, intelClusters, tempArticles } from './db/schema';
 
 export interface Env {
 	DB: D1Database;
-	BROWSER: Fetcher;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	AI: any;
 	// Email — set ENABLE_EMAIL="true" as a Worker secret to activate dispatch.
@@ -509,7 +507,7 @@ async function fetchAndParseSources(sources: Source[], yyyy: string, mm: string,
 		scrapeHunan(yyyy, mm),
 		scrapeNanfang(yyyy, mm, dd),
 		scrapeFujian(yyyy, mm, dd),
-		// Generic fallback for Sichuan (JS-SPA — likely returns empty, Puppeteer covers it on cron)
+		// Sichuan is a JS-SPA — scrapeGeneric returns empty (title filtered as junk). No browser available.
 		...sources
 			.filter(s => !dedicatedNames.has(s.name))
 			.map(s => scrapeGeneric(s.url, s.name)),
@@ -519,9 +517,7 @@ async function fetchAndParseSources(sources: Source[], yyyy: string, mm: string,
 	return results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
 }
 
-// ---------- puppeteer helpers ----------
-
-type Browser = Awaited<ReturnType<typeof puppeteer.launch>>;
+// ---------- article type ----------
 
 interface ScrapedArticle {
 	title: string;
@@ -529,78 +525,6 @@ interface ScrapedArticle {
 	url: string;
 	source: string;
 	parseType?: 'full' | 'rss';
-}
-
-async function scrapeUrl(browser: Browser, startUrl: string, sourceName: string): Promise<ScrapedArticle[]> {
-	const page = await browser.newPage();
-
-	await page.setRequestInterception(true);
-	page.on('request', (req) => {
-		const type = req.resourceType();
-		if (type === 'image' || type === 'stylesheet' || type === 'font') req.abort();
-		else req.continue();
-	});
-
-	const articles: ScrapedArticle[] = [];
-
-	try {
-		await page.goto(startUrl, { waitUntil: 'networkidle2', timeout: 30_000 });
-
-		const subLinks = await page.evaluate((base: string) => {
-			const anchors = Array.from(document.querySelectorAll('a[href]')) as HTMLAnchorElement[];
-			const seen = new Set<string>();
-			const links: string[] = [];
-			for (const a of anchors) {
-				const href = a.href;
-				if (!href || href === base || href.startsWith('javascript') || href.startsWith('#')) continue;
-				try {
-					const url = new URL(href);
-					const baseUrl = new URL(base);
-					if (url.hostname !== baseUrl.hostname) continue;
-					if (seen.has(href)) continue;
-					if (/node|article|content|page|\d{4,}|\.html|\.htm/.test(url.pathname + url.hash)) {
-						seen.add(href);
-						links.push(href);
-					}
-				} catch { /* ignore malformed */ }
-			}
-			return links.slice(0, 25);
-		}, startUrl);
-
-		// Index page as an article
-		const indexText = await page.evaluate(() => document.body.innerText);
-		const indexTitle = await page.evaluate(() => document.title);
-		if (indexText.trim()) {
-			articles.push({ title: indexTitle || startUrl, full_text: indexText.trim(), url: startUrl, source: sourceName });
-		}
-
-		// Sub-pages as individual articles
-		for (const link of subLinks) {
-			const subPage = await browser.newPage();
-			await subPage.setRequestInterception(true);
-			subPage.on('request', (req) => {
-				const type = req.resourceType();
-				if (type === 'image' || type === 'stylesheet' || type === 'font') req.abort();
-				else req.continue();
-			});
-			try {
-				await subPage.goto(link, { waitUntil: 'networkidle2', timeout: 20_000 });
-				const text = await subPage.evaluate(() => document.body.innerText);
-				const title = await subPage.evaluate(() => document.title);
-				if (text.trim().length > 100) {
-					articles.push({ title: title || link, full_text: text.trim(), url: link, source: sourceName });
-				}
-			} catch { /* non-fatal */ } finally {
-				await subPage.close();
-			}
-		}
-	} catch (err) {
-		console.error(`[ERROR scraping ${startUrl}]:`, err);
-	} finally {
-		await page.close();
-	}
-
-	return articles;
 }
 
 // ---------- AI ----------
@@ -708,7 +632,7 @@ async function filterAndAnalyseWithAI(ai: any, articles: ScrapedArticle[]): Prom
 	console.log(`[COMBINED AI] Sending ${inputArticles.length} of ${articles.length} articles`);
 
 	const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
-		max_tokens: 16384,
+		max_tokens: 14000,
 		messages: [
 			{ role: 'system', content: COMBINED_PROMPT },
 			{ role: 'user', content: JSON.stringify(inputArticles) },
@@ -936,13 +860,14 @@ async function sendEmail(
 
 // ---------- shared pipeline ----------
 
-async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
+async function runPipeline(env: Env, isCron: boolean): Promise<string> {
 	const { yyyy, mm, dd } = getCSTDateParts();
 	const trackingDate = `${yyyy}-${mm}-${dd}`;
 	const db = drizzle(env.DB);
 
-	// Idempotency: only enforce on cron runs. HTTP (fetch-only) test runs always proceed.
-	if (!fetchOnly) {
+	// Idempotency guard — cron runs skip if today's briefing already exists.
+	// HTTP GET (curl) always re-runs so you can force a refresh manually.
+	if (isCron) {
 		const existing = await db
 			.select()
 			.from(intelBriefings)
@@ -957,40 +882,15 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 	}
 
 	const sources = buildSources(yyyy, mm, dd);
-	let scrapedArticles: ScrapedArticle[] = [];
-	let scrapeMode = 'puppeteer';
-
-	if (fetchOnly) {
-		// fetch-only mode: skip Puppeteer entirely (safe for testing — no Browser Rendering quota used)
-		console.log('fetch-only mode — skipping Puppeteer, running fetch engine directly…');
-		scrapeMode = 'fetch-only';
-		scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
-		console.log(`Fetch engine yielded ${scrapedArticles.length} articles.`);
-	} else {
-		try {
-			console.log('Attempting Puppeteer (Cloudflare Browser Rendering) scrape…');
-			const browser = await puppeteer.launch(env.BROWSER);
-			for (const { url, name } of sources) {
-				const arts = await scrapeUrl(browser, url, name);
-				scrapedArticles.push(...arts);
-			}
-			try { await browser.close(); } catch { /* browser may already be closed on crash */ }
-			console.log(`Puppeteer scrape succeeded: ${scrapedArticles.length} articles.`);
-		} catch (puppeteerErr) {
-			console.warn(`Puppeteer failed (${(puppeteerErr as Error).message}). Falling back to fetch+HTMLRewriter…`);
-			scrapeMode = 'fetch-fallback';
-			scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
-			console.log(`Fetch fallback yielded ${scrapedArticles.length} articles.`);
-		}
-	}
+	console.log('Fetch engine: scraping all sources…');
+	const scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
+	console.log(`Fetch engine yielded ${scrapedArticles.length} articles.`);
 
 	if (scrapedArticles.length === 0) {
-		const msg = `No articles scraped for ${trackingDate} — both Puppeteer and fetch fallback returned nothing.`;
+		const msg = `No articles scraped for ${trackingDate}.`;
 		console.warn(msg);
 		return msg;
 	}
-
-	console.log(`Scrape mode: ${scrapeMode} — ${scrapedArticles.length} total articles.`);
 
 	// ── Step 1: Clear today's temp articles + purge other dates ──
 	// Wipe today's rows first so re-runs (curl + cron on same day) don't accumulate duplicates.
@@ -1149,20 +1049,20 @@ async function runPipeline(env: Env, fetchOnly: boolean): Promise<string> {
 // ---------- handlers ----------
 
 export default {
-	// HTTP trigger: fetch engine only — never touches Browser Rendering quota.
-	// Use this for manual testing: curl https://scraper-worker.shubhanraj2002.workers.dev
+	// HTTP trigger: always re-runs fetch engine (no idempotency).
+	// Use for manual refreshes: curl https://scraper-worker.shubhanraj2002.workers.dev
 	async fetch(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
 		try {
-			const result = await runPipeline(env, true);
+			const result = await runPipeline(env, false);
 			return new Response(result, { status: 200 });
 		} catch (error) {
 			return new Response(`Pipeline error: ${(error as Error).message}`, { status: 500 });
 		}
 	},
 
-	// Cron trigger: Puppeteer first → fetch fallback. Idempotency enforced.
+	// Cron trigger: fetch engine with idempotency guard (once per CST date).
 	async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
 		console.log('Cron trigger fired. Starting pipeline…');
-		await runPipeline(env, false);
+		await runPipeline(env, true);
 	},
 };

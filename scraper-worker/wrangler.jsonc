@@ -14,9 +14,6 @@
 			"30 1 * * *"
 		]
 	},
-	"browser": {
-		"binding": "BROWSER"
-	},
 	"ai": {
 		"binding": "AI"
 	},
