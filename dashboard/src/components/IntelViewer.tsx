@@ -674,7 +674,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 												</div>
 												<div className="flex-1 min-w-0">
 													<div className="flex items-start gap-2">
-														<p className={['text-base font-medium leading-snug flex-1', a.isImportant ? 'text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-500'].join(' ')}>
+														<p className={['text-base font-medium leading-snug flex-1', a.isImportant ? 'text-slate-900 dark:text-slate-100' : 'text-slate-800 dark:text-slate-400'].join(' ')}>
 															{a.titleEn ?? a.title}
 														</p>
 														{a.parseType === 'rss' && (
@@ -684,7 +684,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 														)}
 													</div>
 													{a.importanceReason && (
-														<p className={['text-sm mt-1.5 leading-relaxed', a.isImportant ? 'text-emerald-700 dark:text-emerald-500' : 'text-slate-500 dark:text-slate-600'].join(' ')}>
+														<p className={['text-sm mt-1.5 leading-relaxed', a.isImportant ? 'text-emerald-700 dark:text-emerald-500' : 'text-slate-700 dark:text-slate-500'].join(' ')}>
 															{a.isImportant ? '✓ ' : '— '}{a.importanceReason}
 														</p>
 													)}
