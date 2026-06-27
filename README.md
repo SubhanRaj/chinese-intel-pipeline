@@ -21,8 +21,7 @@ An automated intelligence extraction pipeline that scrapes Chinese provincial ne
                                             │  ├─ scrapeYunnan()   portal HTML  │
                                             │  ├─ scrapeNanfang()  static epapr │
                                             │  └─ scrapeFujian()   static epapr │
-                                            │  + scrapeGeneric() for Sichuan    │
-                                            │    (returns [] — JS SPA)          │
+                                            │  (Sichuan — JS SPA, no coverage)  │
                                             └───────────┬──────────────────────┘
                                                         │  ScrapedArticle[]
                                                         │  (~33–40 full-text articles)
@@ -98,7 +97,7 @@ Both paths use the identical fetch engine. No Puppeteer, no Browser Rendering qu
 
 ## Fetch Engine — the only scraping layer
 
-Native `fetch()` + `HTMLRewriter` built into the Workers runtime. No npm dependency, no browser, no quota. Six sources have purpose-built dedicated scrapers; Sichuan (JS SPA) falls through the generic scraper with empty output.
+Native `fetch()` + `HTMLRewriter` built into the Workers runtime. No npm dependency, no browser, no quota. Six sources have purpose-built dedicated scrapers. Sichuan Daily is a JS SPA with no static article URL pattern — it has no coverage.
 
 ### What the fetch engine scrapes
 
@@ -110,11 +109,11 @@ Native `fetch()` + `HTMLRewriter` built into the Workers runtime. No npm depende
 | **Yunnan Daily** | `scrapeYunnan()` | Fetches `www.yndaily.com`, extracts relative `/html/{yyyy}/…` hrefs (absolute-URL regex bug fixed 2026-06-27), fetches each | **~5 articles/run** |
 | **Nanfang Daily** | `scrapeNanfang()` | Fetches `epaper.southcn.com/nfdaily/html/{yyyymm}/{dd}/node_A01.html`, extracts absolute `epaper.nfnews.com/…/content_*.html` links, fetches each | **~6 articles/run** |
 | **Fujian Daily** | `scrapeFujian()` | Fetches `fjrb.fjdaily.com/pc/col/{yyyymm}/{dd}/node_01.html`, resolves relative `../../../con/{yyyymm}/{dd}/content_*.html` links, fetches each | **~6 articles/run** |
-| **Sichuan Daily** | `scrapeGeneric()` | JS-rendered SPA — fetch returns a shell; `scrapeGeneric` also filters any article whose page `<title>` looks like a website header (`网_`, `新闻源`, or >60 chars). Returns empty. | **0 articles** |
+| **Sichuan Daily** | — | JS-rendered SPA — `fetch()` returns a hollow shell with no article links. No static URL pattern discovered. | **0 articles** |
 
 **Total fetch-engine yield: ~33–40 full-text articles from 6 of 7 sources per run.**
 
-Sichuan Daily is the only gap. It requires a real browser session. Adding a separate Sichuan endpoint is the main remaining improvement opportunity.
+Sichuan Daily is the only gap. Adding a dedicated scraper requires finding a static article URL pattern (epaper or static HTML mirror).
 
 ### Text extraction
 
@@ -132,21 +131,16 @@ Each `fetch()` call counts against the 50 subrequests/invocation free-plan limit
 | Hunan | 1 (index) + 6 (articles) = 7 |
 | Nanfang | 1 (index) + 6 (articles) = 7 |
 | Fujian | 1 (index) + 6 (articles) = 7 |
-| Sichuan | 1 (returns empty) = 1 |
 | AI Pass 1 | 1 |
 | AI Pass 2 | 1 |
-| **Total** | **~45 / 50** |
-
-### RSS scraper (inactive)
-
-The `scrapeRss()` infrastructure is kept (tries `rsshub.rssforever.com` then `rsshub.app`, 8 s timeout, parses RSS 2.0 and Atom) but `RSS_CONFIGS` is currently empty — all sources now have working dedicated fetch scrapers. Remains available if a source loses its static URL.
+| **Total** | **~44 / 50** |
 
 ---
 
 ## Two-pass AI pipeline
 
 **Model:** `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (Cloudflare Workers AI — free tier)
-**Neuron budget:** ~10,000 neurons/day free. Each run uses ~700–1,200 neurons. Safe for ~8–14 runs/day.
+**Neuron budget:** ~10,000 neurons/day free. Each run uses ~700–1,200 neurons — safe for 8–14 runs/day. This is not a meaningful bottleneck in practice; the old constraint was Puppeteer's 10 min/day browser cap (now removed).
 
 ### Pass 1 — Combined filter + analyse
 
@@ -358,10 +352,7 @@ chinese-intel-pipeline/
 │   │   │   ├── scrapeYunnan()           Portal (www.yndaily.com) relative hrefs → fetch (~5)
 │   │   │   ├── scrapeNanfang()          Static epaper node_A01 → nfnews.com content links → fetch (~6)
 │   │   │   ├── scrapeFujian()           Static epaper node_01 → relative content links → fetch (~6)
-│   │   │   ├── scrapeGeneric()          HTMLRewriter fallback — Sichuan; filters junk page-title articles
-│   │   │   ├── fetchAndParseSources()   Orchestrates all 6 dedicated scrapers + Sichuan generic in parallel
-│   │   │   ├── parseRssXml()            RSS 2.0 / Atom parser (RSS_CONFIGS empty — infrastructure only)
-│   │   │   ├── scrapeRss()              RSSHub fetcher with 8 s timeout (inactive)
+│   │   │   ├── fetchAndParseSources()   Orchestrates all 6 dedicated scrapers in parallel
 │   │   │   ├── extractAiText()          Handles both Workers AI response envelopes
 │   │   │   ├── extractJsonArray()       Finds best JSON array in raw AI text
 │   │   │   ├── filterAndAnalyseWithAI() Pass 1 — combined filter + analysis (title + 250-char snippet)

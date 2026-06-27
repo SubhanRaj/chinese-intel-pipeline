@@ -11,8 +11,8 @@ Cloudflare Worker (fetch engine scraper) → Cloudflare D1 (SQLite) → Next.js 
 ## Critical constraints
 
 - **50 subrequests/invocation (free plan)** — each `fetch()` call and AI binding call counts. D1 queries have a *separate* 50-query limit and do NOT consume the fetch subrequest budget.
-- **10,000 neurons/day (Workers AI free tier)** — current usage ~700–1,200 neurons per run. Safe for ~8–14 runs/day.
-- **Subrequest budget per run:** Yunnan(6) + Guangxi(9) + Hainan(6) + Hunan(7) + Nanfang(7) + Fujian(7) + Sichuan(1) + AI×2(2) ≈ **45 total**. Don't add more fetch calls without removing others.
+- **10,000 neurons/day (Workers AI free tier)** — ~700–1,200 neurons per run, so ~8–14 runs/day. Not a real bottleneck in practice (5+ test runs used only 4.83k one day). The old cap was Puppeteer's 10 min/day browser time — that's gone.
+- **Subrequest budget per run:** Yunnan(6) + Guangxi(9) + Hainan(6) + Hunan(7) + Nanfang(7) + Fujian(7) + AI×2(2) ≈ **44 total**. Don't add more fetch calls without removing others.
 - **AI context window:** 24,000 tokens total. Input is ~7,600 tokens for 34 articles. max_tokens = 14,000. Total: ~21,600 — safe with ~2,400 buffer. Never set max_tokens + expected-input > 23,500.
 
 ## Two paths through the pipeline
@@ -45,9 +45,7 @@ Both passes use `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Never downgrade to a
 | Yunnan Daily | `scrapeYunnan()` | Portal `www.yndaily.com` → relative `/html/{yyyy}/…` hrefs |
 | Nanfang Daily | `scrapeNanfang()` | `epaper.southcn.com/node_A01` → `epaper.nfnews.com/content_*.html` |
 | Fujian Daily | `scrapeFujian()` | `fjrb.fjdaily.com/pc/col/node_01` → relative `../../../con/…` links |
-| Sichuan Daily | `scrapeGeneric()` | JS SPA — `scrapeGeneric()` filters the junk page-title; returns empty |
-
-RSS infrastructure (`scrapeRss`, `parseRssXml`, `RSS_CONFIGS`) is kept but `RSS_CONFIGS = []` — all sources now have static scrapers.
+| Sichuan Daily | — | JS SPA with no static article URL pattern. No coverage — 0 subrequests. |
 
 ## Database: three tiers
 

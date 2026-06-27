@@ -26,6 +26,7 @@ import {
 	IconMinus,
 	IconArticle,
 	IconBuildings,
+	IconBrandGithub,
 } from '@tabler/icons-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -76,6 +77,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 	const [selectedId, setSelectedId] = useState<number | null>(defaultBriefingId);
 	const [dark, setDark] = useState(false);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
+	const [emailOn, setEmailOn] = useState(emailEnabled);
 	const [drawer, setDrawer] = useState<DrawerState | null>(null);
 	const [preservedDrawer, setPreservedDrawer] = useState<IntelArticle | null>(null);
 	const [preservedExpanded, setPreservedExpanded] = useState(false);
@@ -409,17 +411,21 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 				<div className="shrink-0 px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between">
 					<span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-widest">Daily email</span>
 					<button
-						onClick={async () => { await setEmailEnabled(!emailEnabled); }}
+						onClick={async () => {
+							const next = !emailOn;
+							setEmailOn(next);
+							await setEmailEnabled(next);
+						}}
 						className={[
 							'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none',
-							emailEnabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
+							emailOn ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
 						].join(' ')}
-						aria-label={emailEnabled ? 'Disable daily email' : 'Enable daily email'}
-						title={emailEnabled ? 'Daily email ON — click to disable' : 'Daily email OFF — click to enable'}
+						aria-label={emailOn ? 'Disable daily email' : 'Enable daily email'}
+						title={emailOn ? 'Daily email ON — click to disable' : 'Daily email OFF — click to enable'}
 					>
 						<span className={[
 							'inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform',
-							emailEnabled ? 'translate-x-4' : 'translate-x-1',
+							emailOn ? 'translate-x-4' : 'translate-x-1',
 						].join(' ')} />
 					</button>
 				</div>
@@ -453,9 +459,21 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 							</button>
 						</div>
 					</form>
-					<p className="text-[11px] text-slate-400 dark:text-slate-600 mt-1.5 px-1">
-						{briefings.length} briefing{briefings.length !== 1 ? 's' : ''} on record{searchQuery ? ` · searching "${searchQuery}"` : ''}
-					</p>
+					<div className="flex items-center justify-between mt-1.5 px-1">
+						<p className="text-[11px] text-slate-400 dark:text-slate-600">
+							{briefings.length} briefing{briefings.length !== 1 ? 's' : ''} on record{searchQuery ? ` · searching "${searchQuery}"` : ''}
+						</p>
+						<a
+							href="https://github.com/SubhanRaj/chinese-intel-pipeline"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+							title="View on GitHub"
+						>
+							<IconBrandGithub size={13} />
+							<span>GitHub</span>
+						</a>
+					</div>
 				</div>
 			</aside>
 		</>
@@ -715,10 +733,10 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 																	View Full Analysis
 																</button>
 															) : (
-																<span className="text-sm text-slate-400 dark:text-slate-600 italic">Not yet analysed</span>
+																<span className="text-sm text-slate-500 dark:text-slate-400 italic">Not yet analysed</span>
 															)}
 															{safeUrl(a.url) && (
-																<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-slate-400 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 transition-colors py-0.5">
+																<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors py-0.5">
 																	<IconExternalLink size={13} />
 																	Source
 																</a>
@@ -728,7 +746,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 												</div>
 												{/* For skipped articles, show the source link on the right */}
 												{!a.isImportant && safeUrl(a.url) && (
-													<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-1 p-1.5 -mr-1 text-slate-300 dark:text-slate-700 hover:text-blue-500 dark:hover:text-blue-400 transition-colors" title="Open original article">
+													<a href={safeUrl(a.url)!} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-1 p-1.5 -mr-1 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors" title="Open original article">
 														<IconExternalLink size={16} />
 													</a>
 												)}

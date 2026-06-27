@@ -65,8 +65,8 @@ export default function RootLayout({
 	return (
 		<html lang="en">
 			<head>
-				{/* Runs synchronously before first paint — prevents dark mode flash on refresh */}
-				<Script src="/theme-init.js" strategy="beforeInteractive" />
+				{/* Inline script — no network round-trip, runs synchronously during HTML parse before first paint */}
+				<Script id="theme-init" strategy="beforeInteractive">{`(function(){try{if(localStorage.getItem('intel-dark')==='1')document.documentElement.classList.add('dark')}catch(e){}})();`}</Script>
 			</head>
 			<body className={`${inter.variable} ${dmSerif.variable} ${geistMono.variable} antialiased`}>
 				{children}

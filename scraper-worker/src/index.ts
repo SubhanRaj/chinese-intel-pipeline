@@ -352,154 +352,7 @@ async function scrapeFujian(yyyy: string, mm: string, dd: string): Promise<Scrap
 }
 
 // -- Generic HTMLRewriter fallback for sources without a known API pattern
-async function scrapeGeneric(url: string, sourceName: string): Promise<ScrapedArticle[]> {
-	const html = await fetchHtml(url, new URL(url).origin + '/');
-	if (!html) return [];
-	const title = (html.match(/<title>([^<]+)<\/title>/i) || [])[1]?.trim() || url;
-	const text = await extractText(html);
-	if (text.length < 100) {
-		console.warn(`[GENERIC] ${sourceName}: only ${text.length} chars — likely JS-rendered, skipping`);
-		return [];
-	}
-	// If the title looks like a website/portal name rather than an article headline, skip.
-	// Article titles tend to be short (<60 chars) and don't contain site-name markers.
-	if (/网_|新闻源|首页|门户|_/.test(title) || title.length > 60) {
-		console.warn(`[GENERIC] ${sourceName}: title looks like a website header ("${title.slice(0, 50)}") — skipping`);
-		return [];
-	}
-	console.log(`[GENERIC] ${sourceName}: ${text.length} chars`);
-	return [{ title, full_text: text, url, source: sourceName }];
-}
-
-// ---------- RSS scraper ----------
-// Used for JS-rendered sources that block fetch but publish RSS/Atom feeds via RSSHub.
-// Falls back gracefully (returns []) if the feed is unreachable or unparseable.
-// Confirmed routes (via https://rsshub.rssforever.com):
-//   Hunan Daily  → /hnrb
-//   Nanfang Daily → /southcn/nfapp/column/38  (Guangdong general column)
-
-const RSSHUB_INSTANCES = [
-	'https://rsshub.rssforever.com',
-	'https://rsshub.app',
-];
-
-interface RssConfig {
-	name: string;   // must match Source.name exactly
-	path: string;   // RSSHub route path e.g. /hnrb
-}
-
-// All sources now have dedicated scrapers; RSS kept only as last-resort for sources that
-// lose their static URL (currently none — configs array left empty but infrastructure preserved).
-const RSS_CONFIGS: RssConfig[] = [];
-
-// Extract text from an XML tag, handling CDATA wrappers.
-function xmlText(xml: string, tag: string): string {
-	const re = new RegExp(`<${tag}[^>]*>\\s*(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?\\s*</${tag}>`, 'i');
-	return (xml.match(re)?.[1] ?? '').trim();
-}
-
-// Strip HTML tags from a string (RSS descriptions often contain markup).
-function stripHtml(html: string): string {
-	return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function parseRssXml(xml: string, sourceName: string): ScrapedArticle[] {
-	const articles: ScrapedArticle[] = [];
-	// Match both <item> (RSS) and <entry> (Atom)
-	const itemRe = /<(?:item|entry)[^>]*>([\s\S]*?)<\/(?:item|entry)>/g;
-
-	for (const m of xml.matchAll(itemRe)) {
-		const item = m[1];
-		const rawTitle = xmlText(item, 'title');
-		// Atom uses <link href="…"/> or <link>…</link>; RSS uses <link>…</link>
-		const link =
-			(item.match(/<link[^>]+href=["']([^"']+)["']/i)?.[1]) ||
-			xmlText(item, 'link') ||
-			xmlText(item, 'guid');
-		// RSS uses <description>; Atom uses <summary> or <content>
-		const desc =
-			xmlText(item, 'description') ||
-			xmlText(item, 'summary') ||
-			xmlText(item, 'content');
-
-		const title = stripHtml(rawTitle);
-		if (!title || !link) continue;
-
-		articles.push({
-			title,
-			full_text: stripHtml(desc),
-			url: link,
-			source: sourceName,
-			parseType: 'rss',
-		});
-	}
-
-	return articles.slice(0, 20);
-}
-
-async function scrapeRss(config: RssConfig): Promise<ScrapedArticle[]> {
-	for (const instance of RSSHUB_INSTANCES) {
-		const url = `${instance}${config.path}`;
-		const controller = new AbortController();
-		const timer = setTimeout(() => controller.abort(), 8_000);
-		try {
-			const res = await fetch(url, {
-				signal: controller.signal,
-				headers: {
-					'User-Agent': 'Mozilla/5.0 (compatible; RSSReader/1.0)',
-					'Accept': 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
-				},
-			});
-			clearTimeout(timer);
-			if (!res.ok) {
-				console.warn(`[RSS] ${config.name}: ${instance} returned ${res.status}`);
-				continue;
-			}
-			const xml = await res.text();
-			const articles = parseRssXml(xml, config.name);
-			if (articles.length === 0) {
-				console.warn(`[RSS] ${config.name}: ${instance} — feed parsed but no items found`);
-				continue;
-			}
-			console.log(`[RSS] ${config.name}: ${articles.length} items via ${instance}`);
-			return articles;
-		} catch (err) {
-			clearTimeout(timer);
-			console.warn(`[RSS] ${config.name}: ${instance} failed — ${(err as Error).message}`);
-		}
-	}
-	console.warn(`[RSS] ${config.name}: all instances failed — skipping`);
-	return [];
-}
-
-// After RSS scraping, try to fetch each article's URL to get full text.
-// RSS feeds only provide title + short excerpt; fetching the source URL often yields the
-// complete article. Falls back silently to the RSS excerpt if the fetch fails or is too short.
-async function enrichRssArticles(articles: ScrapedArticle[]): Promise<ScrapedArticle[]> {
-	return Promise.all(
-		articles.map(async (article) => {
-			if (article.parseType !== 'rss' || !article.url) return article;
-			try {
-				const html = await fetchHtml(article.url, article.url);
-				if (!html) return article;
-				const text = await extractText(html);
-				if (text.length < 200) return article;
-				console.log(`[RSS ENRICH] ${article.source}: fetched full text for "${article.title.slice(0, 40)}" (${text.length} chars)`);
-				return { ...article, full_text: text, parseType: 'full' as const };
-			} catch {
-				return article;
-			}
-		}),
-	);
-}
-
 async function fetchAndParseSources(sources: Source[], yyyy: string, mm: string, dd: string): Promise<ScrapedArticle[]> {
-	// Dedicated scrapers for all 7 sources.
-	// Sichuan remains on scrapeGeneric (JS-SPA, no static article URL pattern found).
-	const dedicatedNames = new Set([
-		'Yunnan Daily', 'Guangxi Daily', 'Hainan Daily',
-		'Hunan Daily', 'Nanfang Daily', 'Fujian Daily',
-	]);
 	const results = await Promise.allSettled([
 		scrapeYunnan(yyyy, mm, dd),
 		scrapeGuangxi(yyyy, mm, dd),
@@ -507,12 +360,7 @@ async function fetchAndParseSources(sources: Source[], yyyy: string, mm: string,
 		scrapeHunan(yyyy, mm),
 		scrapeNanfang(yyyy, mm, dd),
 		scrapeFujian(yyyy, mm, dd),
-		// Sichuan is a JS-SPA — scrapeGeneric returns empty (title filtered as junk). No browser available.
-		...sources
-			.filter(s => !dedicatedNames.has(s.name))
-			.map(s => scrapeGeneric(s.url, s.name)),
-		// RSS kept as infrastructure — currently no active configs
-		...RSS_CONFIGS.map(cfg => scrapeRss(cfg)),
+		// Sichuan Daily is a JS-SPA with no static article URL pattern — no articles fetched.
 	]);
 	return results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
 }
@@ -723,7 +571,7 @@ async function clusterArticlesWithAI(ai: any, articles: AiArticleWithSource[]): 
 						summary: a.summary.slice(0, 150),
 						source: a.source,
 					})),
-				).slice(0, 4_000),
+				).slice(0, 12_000),
 			},
 		],
 	});
@@ -737,14 +585,19 @@ async function clusterArticlesWithAI(ai: any, articles: AiArticleWithSource[]): 
 	const parsed = extractJsonArray(rawText);
 	if (parsed && parsed.length > 0 && 'article_indices' in (parsed[0] as object)) {
 		const clusters = parsed as ClusterResult[];
-		// Validate every index is covered exactly once
 		const covered = new Set(clusters.flatMap(c => c.article_indices));
-		const allCovered = articles.every((_, i) => covered.has(i));
-		if (allCovered) {
-			const multiCount = clusters.filter(c => c.article_indices.length > 1).length;
-			console.log(`[CLUSTER AI] ${clusters.length} clusters (${multiCount} multi-source) from ${articles.length} articles`);
-			return clusters;
+		// Add uncovered articles as single-item clusters rather than discarding all groupings
+		const uncovered = articles.map((_, i) => i).filter(i => !covered.has(i));
+		if (uncovered.length > 0) {
+			console.warn(`[CLUSTER AI] ${uncovered.length} articles not covered by AI — adding as single-item clusters`);
+			for (const i of uncovered) {
+				const a = articles[i];
+				clusters.push({ title: a.title, summary: a.summary, category: a.category, article_indices: [i] });
+			}
 		}
+		const multiCount = clusters.filter(c => c.article_indices.length > 1).length;
+		console.log(`[CLUSTER AI] ${clusters.length} clusters (${multiCount} multi-source) from ${articles.length} articles`);
+		return clusters;
 	}
 
 	console.warn('[CLUSTER AI] Invalid output (missing indices) — treating each article as its own cluster');

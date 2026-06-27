@@ -18,72 +18,7 @@ This document records all empirical findings, dead ends, and decisions made whil
 
 ---
 
-## Approach 1 — Cloudflare Browser Rendering (Puppeteer)
-
-### What it is
-
-`@cloudflare/puppeteer` connects to Cloudflare's hosted headless Chromium via the Browser Rendering (Browser Run) service. It's the only browser-automation option inside a Cloudflare Worker.
-
-### Why it was removed (2026-06-27)
-
-**It was both unreliable AND worse than the fetch engine:**
-
-1. **Free plan hard limits** (sourced from `developers.cloudflare.com/browser-rendering/platform/limits/`):
-   - 10 minutes/day browser time
-   - 3 concurrent browser sessions
-   - 1 new instance per 20 seconds
-
-2. **Generic `scrapeUrl()` quality was worse than dedicated scrapers.** The Puppeteer implementation used a single generic function: open index page → follow up to 25 random sub-links → open each in a new tab. It had no knowledge of Guangxi's API format, Hainan's `l:[…]` structure, Fujian's `../../../con/` paths, etc. Our dedicated fetch scrapers are purpose-built for each source and consistently produce better results.
-
-3. **7 sources × up to 25 sub-pages each = ~175 tab navigations.** Worst case: 7 × (30 s + 25 × 20 s) ≈ 60 minutes. The 10-min free cap would be exhausted every run.
-
-4. **Bot flag is permanent.** CF docs: *"Requests from Browser Run will always be identified as a bot regardless of the user agent set."* Any Chinese site with anti-bot detection would reject every request.
-
-5. **Local dev `wrangler dev --remote --test-scheduled` always timed out.** `waitUntil()` tasks cancelled after ~115s. Even if Puppeteer launched, `networkidle2` on 7 sources + sub-pages never completes in the dev environment.
-
-### Final verdict
-
-Puppeteer removed from the pipeline entirely as of 2026-06-27. The BROWSER binding removed from wrangler.jsonc. `scrapeUrl()` function deleted. `@cloudflare/puppeteer` import removed.
-
-The fetch engine covers 6 of 7 sources with dedicated scrapers producing better-quality output than Puppeteer's generic link-following ever did. Sichuan remains uncovered.
-
----
-
-## Approach 2 — Standard Puppeteer (Local / Node.js)
-
-Used purely for offline research to determine which sites are scrapeable in principle. Cannot run inside a Cloudflare Worker.
-
-### Test setup
-
-```
-/chinese-intel-pipeline/local-scrape-test/
-  package.json        (puppeteer dependency)
-  scrape-test.mjs     (test script)
-```
-
-```bash
-cd local-scrape-test
-npm install
-node scrape-test.mjs
-```
-
-### Results (tested 2026-06-25, CST)
-
-```
-Scraping Yunnan Daily...   HTTP 403 —  395 chars —  3.1s
-Scraping Sichuan Daily...  HTTP 200 —  123 chars — 22.2s
-Scraping Guangxi Daily...  HTTP 200 —  325 chars —  4.1s
-Scraping Hunan Daily...    HTTP 200 —    7 chars — 17.2s
-Scraping Fujian Daily...   HTTP 200 — 1012 chars — 23.5s
-Scraping Nanfang Daily...  HTTP 200 — 1264 chars — 12.3s
-Scraping Hainan Daily...   HTTP 200 —  266 chars — 10.6s
-```
-
-These results were from the original mobile/SPA URLs. After switching to static HTML portals (research documented below), the fetch engine handles 6 of 7 without any browser at all.
-
----
-
-## Approach 3 — Simple fetch() + HTMLRewriter (current)
+## The Custom Fetch Engine
 
 The only scraping layer. No browser dependency, no quota, runs inside the Worker.
 
@@ -104,7 +39,7 @@ The only scraping layer. No browser dependency, no quota, runs inside the Worker
 
 | Source | Reason |
 |---|---|
-| Sichuan Daily | JS SPA — `fetch()` returns empty shell; page `<title>` filtered as junk by `scrapeGeneric()`; no static article URL pattern found |
+| Sichuan Daily | JS SPA — `fetch()` returns a hollow shell with no article links. No static article URL pattern found. |
 
 ### Key bugs fixed
 
@@ -119,20 +54,15 @@ The only scraping layer. No browser dependency, no quota, runs inside the Worker
 - New dedicated `scrapeNanfang()` replaced the RSS route entirely.
 
 **2026-06-27 — Fujian Daily**
-- `scrapeGeneric()` returned just the page `<title>` ("Fujian Daily Digital Edition") because `<p>` tags aren't on the node_01 index page.
+- Generic fetch returned just the page `<title>` ("Fujian Daily Digital Edition") because `<p>` tags aren't on the node_01 index page.
 - The index page lists relative article links `../../../con/{yyyymm}/{dd}/content_*.html`.
-- New dedicated `scrapeFujian()` resolves and fetches those individually.
+- Dedicated `scrapeFujian()` resolves and fetches those individually.
 
 **2026-06-27 — max_tokens context window collision**
 - Bumped max_tokens to 16384 thinking it would fix truncation of last 3 articles.
 - Error: 16384 output + 7617 input = 24001 tokens > 24000 token context window.
 - Fix: max_tokens = 14000. Gives ~22,200 total — safe with a 1,800-token buffer.
 - Root cause of "3 missing articles": those 3 were the last in the input array and likely just below the AI's relevance bar, not truncated.
-
-**2026-06-27 — Sichuan junk article**
-- `scrapeGeneric()` returned "四川日报网_四川政经新闻源 高端互动台" as an article title (the page's `<title>` tag).
-- Added title filter to `scrapeGeneric()`: skip any result where title contains `网_`, `新闻源`, or is >60 chars.
-- Sichuan now returns 0 articles cleanly instead of 1 junk article.
 
 ---
 
@@ -193,10 +123,7 @@ Not implemented — new static HTML URLs solved the same problems without an ext
 
 | Date | Decision | Reason |
 |---|---|---|
-| Pre-2026-06-25 | Puppeteer as primary cron strategy | Expected it to handle JS-rendered SPAs |
-| 2026-06-25 | Confirmed Puppeteer free-plan cap (10 min/day) | Docs + empirical: cron always falls back to fetch |
-| 2026-06-25 | Fixed Yunnan URL: `${mm}${dd}` → `${yyyymmdd}` in path segment | Bug found via local Puppeteer test |
-| 2026-06-25 | Added `enrichRssArticles()` — fetch full text from RSS article URLs | RSS articles had only excerpt (~100 chars) sent to AI |
+| 2026-06-25 | Fixed Yunnan URL: `${mm}${dd}` → `${yyyymmdd}` in path segment | Path format mismatch found via fetch testing |
 | 2026-06-25 | Two-level depth for `scrapeHainan()` | Content files in node_58471 are section pages, not articles |
 | 2026-06-25 | Raised minimum article text threshold 50 → 200 chars | Section index pages were passing to AI and polluting feed |
 | 2026-06-25 | Decided against Chinese residential proxies | CF Workers can't configure proxies |
@@ -207,15 +134,16 @@ Not implemented — new static HTML URLs solved the same problems without an ext
 | 2026-06-27 | Added dedicated `scrapeFujian()` | `scrapeGeneric` returned page title only |
 | 2026-06-27 | Bumped Guangxi cap 6 → 8; snippet 200 → 250 chars; budget 8k → 10k chars | Confirmed subrequest headroom (~45/50) |
 | 2026-06-27 | `limits.cpu_ms` rejected on free plan (code 100328) | Pipeline is I/O-bound; CPU limit irrelevant |
-| 2026-06-27 | **Removed Puppeteer entirely** | Generic scrapeUrl() worse than dedicated scrapers; 10 min/day cap; bot-flagged by default. Fetch engine covers 6/7 sources with better quality. BROWSER binding removed from wrangler.jsonc |
 | 2026-06-27 | Fixed max_tokens: 16384 → 14000 | 16384 + 7617 input = 24001 > 24000 context limit; AI rejected call, temp_articles emptied |
-| 2026-06-27 | Added junk-title filter to `scrapeGeneric()` | Sichuan homepage `<title>` ("四川日报网_四川政经新闻源…") was being stored as an article |
+| 2026-06-27 | Removed RSS infrastructure (`scrapeRss`, `parseRssXml`, `RSS_CONFIGS`) | All 6 sources now have dedicated fetch scrapers; RSS was inactive dead code |
+| 2026-06-27 | Fixed clustering: `.slice(0, 4_000)` → `.slice(0, 12_000)` in Pass 2 input | 16 articles × ~300 chars = ~4,800 chars; last few articles were cut, indices missing → allCovered check failed → fell back to 1 cluster per article |
+| 2026-06-27 | Confirmed neurons are not a real bottleneck | 5+ test runs used only 4.83k/10k neurons. The real old cap was Puppeteer's 10 min/day browser time — eliminated with Puppeteer removal. Fetch engine can run freely. |
 
 ---
 
 ## Remaining Open Problems
 
-1. **Sichuan Daily** — JS SPA. No static article URL pattern. The only viable option is a real browser session (Jina Reader, a paid browser-render service, or upgrading CF Browser Rendering). Low priority — the other 6 sources cover the most geopolitically relevant provinces.
+1. **Sichuan Daily** — JS SPA. No static article URL pattern found. Viable options: Jina Reader (`r.jina.ai`) renders the page server-side and returns clean markdown — confirmed working for Sichuan in testing. Low priority — the other 6 sources cover the most geopolitically relevant provinces.
 
 2. **Yunnan Daily article redirect** — `www.yndaily.com` article links appear to redirect to `yndaily.yunnan.cn` (WAF-blocked). Confirmed that portal homepage links do resolve — scraper works for now. Monitor if link structure changes.
 
