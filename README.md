@@ -253,8 +253,9 @@ Articles bookmarked via the preserve button. Exempt from 30-day cleanup.
 Sidebar search. Enter/Search commits query and opens a results page across all dates. Clears back to previous view.
 
 ### Sidebar controls
-- **Dark/light mode toggle** — persisted in `localStorage` (no flash on refresh — inline script in `<head>` applies dark class before first paint)
-- **Daily email toggle** — on/off switch stored in D1 `settings` table. Visible to anyone with dashboard access. Email address stays in Cloudflare secrets, not UI.
+- **Dark/light mode toggle** — persisted in `localStorage` (no flash on refresh — inline script in `<head>` applies dark class before first paint). Available to all users including anonymous.
+- **Sign in / Sign out** — login link for anonymous users; user name + logout button for authenticated users (planned).
+- **Daily email toggle** — visible only when signed in; toggles your own email notification preference stored per-user in D1 (planned). Currently: global toggle in `settings` table visible to all.
 - **GitHub link** — links to repository from sidebar footer
 
 ---
@@ -263,9 +264,12 @@ Sidebar search. Enter/Search commits query and opens a results page across all d
 
 Daily briefings via **Resend**. Table-based HTML template (inline CSS — required for Gmail). One row per cluster.
 
-**Toggle:** on/off switch in the dashboard sidebar. State persisted in D1 `settings` table (`email_enabled` key: `'0'` = off, `'1'` = on). Default: off.
+**Current behaviour:** Global on/off toggle in the dashboard sidebar. State persisted in D1 `settings` table (`email_enabled` key). Sent to a single `RESEND_TO_EMAIL` secret.
 
-**Secrets required** (set via `npx wrangler secret put`): `RESEND_API_KEY`, `RESEND_TO_EMAIL`, `RESEND_FROM_EMAIL`.
+**Planned (post-auth migration):** Each user in the `users` table has an `email_notifications` flag. Scraper queries D1 for all enabled users and sends individually. `RESEND_TO_EMAIL` secret deprecated. OTP login emails for the dashboard also routed via Resend.
+
+**Secrets required on scraper worker** (set via `npx wrangler secret put`): `RESEND_API_KEY`, `RESEND_TO_EMAIL` (deprecated post-migration), `RESEND_FROM_EMAIL`.
+**Secrets required on dashboard worker** (planned): `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `SESSION_SECRET`.
 
 ---
 
@@ -349,11 +353,59 @@ Daily briefings via **Resend**. Table-based HTML template (inline CSS — requir
 | `key` | TEXT PK | Setting name |
 | `value` | TEXT | Setting value |
 
-Current keys: `email_enabled` (`'0'` = off, `'1'` = on). Toggled from dashboard UI.
+Current keys: `email_enabled` (`'0'` = off, `'1'` = on). Toggled from dashboard UI (global; deprecated post-auth migration).
+
+### `users` — registered accounts (migration 0009 — planned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | autoincrement |
+| `email` | TEXT UNIQUE | login identity |
+| `name` | TEXT | display name |
+| `role` | TEXT | `'admin'` or `'user'` |
+| `email_notifications` | INTEGER | `0` = off, `1` = on |
+| `created_at` | DATETIME | auto |
+
+### `auth_magic_links` — one-time login tokens (migration 0009 — planned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | autoincrement |
+| `email` | TEXT | recipient |
+| `token_hash` | TEXT | SHA-256 of the plaintext token — never stored raw |
+| `expires_at` | TEXT | 15 min from generation |
+| `used` | INTEGER | `1` after first verification |
+| `created_at` | DATETIME | auto |
+
+### `auth_sessions` — active login sessions (migration 0009 — planned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | `crypto.randomUUID()` — HMAC-signed in cookie, verified on each request |
+| `user_id` | INTEGER | FK → users |
+| `expires_at` | TEXT | admin: never (session cookie handles expiry); user: +1 year |
+| `persistent` | INTEGER | `0` = session cookie (admin), `1` = persistent cookie (user) |
+| `created_at` | DATETIME | auto |
 
 ---
 
-## Security
+## Security & Auth
+
+### Access tiers (planned — migration 0009)
+
+| Tier | Login | Session | Capabilities |
+|---|---|---|---|
+| **Anonymous** | None | — | View briefings, feed, archive; toggle dark mode |
+| **User** | Magic link (email) | Persistent cookie (until logout) | + preserve articles; toggle own email notifications |
+| **Admin** | Magic link + optional TOTP | Session cookie (clears on browser/tab close) | + delete articles/clusters; manage users via `/admin` panel |
+
+**Magic link flow (passwordless):** Enter email → server checks `users` table → if registered, Resend delivers a one-time login URL (15-min expiry, single-use, token hash stored in D1). Click link → for admin, optional TOTP challenge → session cookie set.
+
+**TOTP (admin only, optional):** Implemented with SubtleCrypto (HMAC-SHA1, RFC 6238). Compatible with any TOTP authenticator app. Set up via the admin panel — no third-party auth service.
+
+**Scraper protection (planned):** HTTP trigger requires `Authorization: Bearer <SCRAPER_SECRET>`. Cron trigger bypasses (internal, already protected by CF scheduler).
+
+### Current protections (pre-auth)
 
 | Surface | Protection |
 |---|---|
@@ -361,6 +413,8 @@ Current keys: `email_enabled` (`'0'` = off, `'1'` = on). Toggled from dashboard 
 | URL rendering | All `href` values pass through `safeUrl()` — only `http://` and `https://` allowed |
 | Content rendering | Article text rendered as React text nodes, never `dangerouslySetInnerHTML` |
 | Secrets | `RESEND_API_KEY`, `RESEND_TO_EMAIL`, `RESEND_FROM_EMAIL` stored as Wrangler secrets — never in source or git |
+
+No third-party auth service (Clerk, Auth0, etc.) — auth is custom-built on CF primitives + SubtleCrypto.
 
 ---
 
@@ -404,15 +458,20 @@ chinese-intel-pipeline/
     │   ├── app/
     │   │   ├── actions.ts               Server Actions: preserve/delete article & cluster; setEmailEnabled
     │   │   ├── layout.tsx               Metadata, fonts, inline dark-mode script (beforeInteractive — no FOUC)
-    │   │   ├── page.tsx                 Server component — queries all five tables (incl. settings)
-    │   │   └── globals.css              Tailwind v4 + Shadcn tokens
+    │   │   ├── page.tsx                 Server component — queries all tables + active session (planned)
+    │   │   ├── globals.css              Tailwind v4 + Shadcn tokens
+    │   │   ├── login/                   (planned) Magic-link request page + requestMagicLink server action
+    │   │   ├── auth/verify/             (planned) Magic-link landing page; TOTP challenge for admin
+    │   │   └── admin/                   (planned) User mgmt panel: list/add/remove users, set roles, toggle email notifications per user, change receiver email, global email kill-switch
     │   ├── components/
     │   │   ├── IntelViewer.tsx          Client: sidebar (dark toggle, email toggle, GitHub link),
     │   │   │                                    Today's Feed (collapsible by source, collapsed by default),
     │   │   │                                    Intel Briefing, ClusterCard, ClusterDrawer, search
     │   │   ├── MarkdownRenderer.tsx     Legacy briefings (react-markdown, ssr:false)
     │   │   └── ui/                      Shadcn primitives
-    │   └── db/schema.ts                 Drizzle ORM (mirrors scraper-worker)
+    │   ├── lib/
+    │   │   └── auth.ts                  (planned) getSession, requireAuth, createSession, magic-link helpers
+    │   └── db/schema.ts                 Drizzle ORM (mirrors scraper-worker; auth tables added in 0009)
     └── wrangler.jsonc                   Worker-mode deploy
 ```
 
@@ -435,9 +494,17 @@ npx wrangler d1 migrations apply intel_briefings_db --remote
 ### 2. Set Worker secrets
 
 ```bash
+# Scraper worker
 cd scraper-worker
 npx wrangler secret put RESEND_API_KEY
-npx wrangler secret put RESEND_TO_EMAIL
+npx wrangler secret put RESEND_TO_EMAIL      # deprecated post-auth migration
+npx wrangler secret put RESEND_FROM_EMAIL
+npx wrangler secret put SCRAPER_SECRET       # planned — protects HTTP trigger
+
+# Dashboard worker (planned — needed once auth migration deployed)
+cd ../dashboard
+npx wrangler secret put SESSION_SECRET
+npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put RESEND_FROM_EMAIL
 ```
 
@@ -453,7 +520,12 @@ cd ../dashboard && npm run deploy
 ### 4. Test (manual trigger)
 
 ```bash
+# Current (no auth yet)
 curl https://scraper-worker.shubhanraj2002.workers.dev
+
+# After SCRAPER_SECRET is set (planned)
+curl -H "Authorization: Bearer $SCRAPER_SECRET" \
+  https://scraper-worker.shubhanraj2002.workers.dev
 ```
 
 Runs the full two-pass pipeline immediately. The response body shows what happened (e.g. `Pipeline completed for 2026-06-27 — 12 important articles in 5 clusters.`). The daily cron at 01:30 UTC runs automatically via Cloudflare scheduler.

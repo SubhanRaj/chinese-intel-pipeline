@@ -55,29 +55,43 @@ Both passes use `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Never downgrade to a
 | Fujian Daily | `scrapeFujian()` | `fjrb.fjdaily.com/pc/col/node_01` → relative `../../../con/…` links |
 | Sichuan Daily | — | JS SPA with no static article URL pattern. No coverage — 0 subrequests. |
 
-## Database: four tiers
+## Database: four tiers (current)
 
 | Table | Content | Lifetime |
 |---|---|---|
 | `temp_articles` | All scraped articles (important + not), 24h feed | Cleared after next successful AI Pass 1 |
 | `intel_clusters` + `intel_articles` | Important articles, fully analysed and clustered | 30 days → auto-cleanup |
 | `intel_articles` where `is_preserved=1` | Hand-preserved articles | Permanent |
-| `settings` | Pipeline config (email toggle) | Persistent key-value store |
+| `settings` | Pipeline config (global email kill-switch) | Persistent key-value store |
 
 **URLs are stored for ALL articles** including non-important ones in `temp_articles.url`. The dashboard shows a ↗ source link on every card.
 
 **`settings` table keys:**
-- `email_enabled`: `'0'` = off (default), `'1'` = on. Toggled from dashboard sidebar UI. No Worker redeploy needed.
+- `email_enabled`: `'0'` = off (default), `'1'` = on. Global kill-switch, toggled from dashboard.
+
+**Auth tables (migration 0009 — planned, not yet deployed):**
+
+| Table | Content |
+|---|---|
+| `users` | Known accounts: `id, email, name, role ('admin'|'user'), email_notifications, created_at` |
+| `auth_magic_links` | One-time login tokens: `id, email, token_hash, expires_at, used, created_at` |
+| `auth_sessions` | Active sessions: `id TEXT (UUID), user_id, expires_at, persistent (0=session/1=remember), created_at` |
 
 ## Key files
 
 ```
-scraper-worker/src/index.ts    — all pipeline logic (scraping, AI, storage, email)
-scraper-worker/wrangler.jsonc  — bindings (D1, AI), cron 30 1 * * * (no BROWSER binding)
-dashboard/src/app/page.tsx     — server component, queries all five tables (incl. settings)
+scraper-worker/src/index.ts       — all pipeline logic (scraping, AI, storage, email)
+scraper-worker/wrangler.jsonc     — bindings (D1, AI), cron 30 1 * * * (no BROWSER binding)
+scraper-worker/migrations/        — D1 schema migrations 0001–0008 (0009 auth — pending)
+dashboard/src/app/page.tsx        — server component, queries all tables + session
 dashboard/src/components/IntelViewer.tsx — all client UI (sidebar, feed, briefing, email toggle, GitHub link)
-dashboard/src/app/actions.ts   — server actions (preserve/delete article & cluster; setEmailEnabled)
-dashboard/src/app/layout.tsx   — inline dark-mode script in <head> (beforeInteractive — no FOUC)
+dashboard/src/app/actions.ts      — server actions (preserve/delete article & cluster; setEmailEnabled)
+dashboard/src/app/layout.tsx      — inline dark-mode script in <head> (beforeInteractive — no FOUC)
+dashboard/src/db/schema.ts        — Drizzle ORM schema (all tables)
+dashboard/src/lib/auth.ts         — (planned) session helpers: getSession, requireAuth, createSession
+dashboard/src/app/login/          — (planned) magic-link request page + requestMagicLink server action
+dashboard/src/app/auth/verify/    — (planned) magic-link landing page + TOTP challenge for admin
+dashboard/src/app/admin/          — (planned) user management panel (admin role only)
 ```
 
 ## Dashboard features
@@ -90,6 +104,58 @@ dashboard/src/app/layout.tsx   — inline dark-mode script in <head> (beforeInte
 - **Email toggle** — on/off switch in sidebar. Writes to D1 `settings` table. Email address stays in CF secrets.
 - **GitHub link** — sidebar footer.
 
+## Auth & Security (planned — migration 0009)
+
+### Access tiers
+
+| Tier | Who | Login method | What they can do |
+|---|---|---|---|
+| Anonymous | Everyone | — | View briefings, feed, archive, toggle dark mode |
+| User | Commissioner (invited) | Magic link (email) | Everything above + preserve articles + toggle own email notifications |
+| Admin | Subhan | Magic link + optional TOTP | Everything above + delete articles/clusters + manage users via `/admin` panel |
+
+### Magic link flow (passwordless)
+1. Enter email on `/login` → server checks `users` table → if found, generates a signed one-time token (HMAC-SHA256, UUID, stored hashed in D1, 15-min expiry)
+2. Resend delivers a link: `https://dashboard.../auth/verify?token=<token>`
+3. Click link → token verified (single-use, expiry checked) → session created
+4. Admin with TOTP configured: intermediate TOTP challenge before session is issued
+5. Session cookie set: admin gets a session cookie (no `Max-Age` → clears on browser/tab close); users get a 1-year persistent cookie
+
+### Session security
+- Session ID: `crypto.randomUUID()` — HMAC-SHA256 signed in cookie value, verified on each request
+- Session stored in D1 `auth_sessions`; can be revoked by deleting the row (logout)
+- All tokens and session IDs stored as SHA-256 hashes in D1, never plaintext
+- All mutations (`togglePreserve`, `deleteArticle`, `deleteCluster`, etc.) call `requireAuth()` before executing
+- Magic link token hash: SHA-256 in D1. Plaintext token only exists in the email link and in-browser URL — never stored
+
+### Scraper protection (planned)
+- New `SCRAPER_SECRET` CF secret on the scraper worker
+- HTTP GET trigger: requires `Authorization: Bearer <SCRAPER_SECRET>` header
+- Cron trigger: bypasses check (internal, already protected by CF)
+- `curl` invocations updated to: `curl -H "Authorization: Bearer $SCRAPER_SECRET" <url>`
+
+### New secrets needed (not yet set)
+- Dashboard worker: `SESSION_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
+- Scraper worker: `SCRAPER_SECRET`
+
+### Email subscriptions (post-auth)
+- Currently: global `settings.email_enabled` toggle, single `RESEND_TO_EMAIL` recipient
+- After auth: scraper queries `users WHERE email_notifications = 1`, sends to each address
+- `RESEND_TO_EMAIL` secret deprecated once migration is deployed and users are seeded
+
+### Admin panel capabilities (planned)
+- List all users (name, email, role, email notification toggle)
+- Add new user: set name, email, role
+- Remove user
+- Toggle any user's email notifications on/off
+- Add/change receiver email per user (no need to touch CF dashboard or redeploy)
+- Global email kill-switch (replaces `settings.email_enabled`)
+
+### Future (not in current scope)
+- Public signup flow (multi-user beyond invited accounts)
+- Google OAuth as admin alternate login (OAuth2 via fetch calls only, no SDK — needs GCP project)
+- Per-user article annotations beyond bookmarks
+
 ## Things to never do
 
 - Don't bump article fetch caps without checking total subrequest count (target ≤ 48).
@@ -100,6 +166,10 @@ dashboard/src/app/layout.tsx   — inline dark-mode script in <head> (beforeInte
 - Don't use `dangerouslySetInnerHTML` anywhere in the dashboard.
 - Don't commit `.env` or Wrangler secrets to git — stored as Wrangler secrets only.
 - Don't move the temp_articles DELETE back to before the AI call — it was intentionally moved after Pass 1 to preserve feed data on AI failures.
+- Don't expose auth tokens or session IDs in plaintext in D1 — always store as SHA-256 hashes.
+- Don't add a 3rd-party auth provider (Clerk, Auth0, etc.) — auth is custom-built using CF primitives and SubtleCrypto.
+- Don't allow mutations (preserve, delete, email toggle) without calling `requireAuth()` — all server actions must check session.
+- Don't set `Max-Age` on admin session cookies — admin sessions must be ephemeral (clear on browser close).
 
 ## Deploy commands
 
@@ -113,11 +183,23 @@ cd dashboard && npm run deploy
 # Test the pipeline (skips if today's data already exists)
 curl https://scraper-worker.shubhanraj2002.workers.dev
 
+# After SCRAPER_SECRET is set, test with:
+curl -H "Authorization: Bearer $SCRAPER_SECRET" https://scraper-worker.shubhanraj2002.workers.dev
+
 # Force re-run (delete today's feed first)
 npx wrangler d1 execute intel_briefings_db --remote --command \
   "DELETE FROM temp_articles WHERE tracking_date='$(date +%Y-%m-%d)'"
-curl https://scraper-worker.shubhanraj2002.workers.dev
 
 # Check D1 data
 cd scraper-worker && npx wrangler d1 execute intel_briefings_db --remote --command "SELECT ..."
+
+# Set secrets (run once per worker after auth migration)
+cd scraper-worker && npx wrangler secret put SCRAPER_SECRET
+cd dashboard && npx wrangler secret put SESSION_SECRET
+cd dashboard && npx wrangler secret put RESEND_API_KEY
+cd dashboard && npx wrangler secret put RESEND_FROM_EMAIL
+
+# Run auth migration (0009)
+npx wrangler d1 execute intel_briefings_db --remote \
+  --file scraper-worker/migrations/0009_add_auth.sql
 ```
