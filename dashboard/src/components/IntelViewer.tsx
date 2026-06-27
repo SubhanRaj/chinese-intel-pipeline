@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import {
 	IconSun,
 	IconMoon,
+	IconDeviceLaptop,
 	IconNews,
 	IconCalendar,
 	IconChevronRight,
@@ -75,7 +76,8 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 	const defaultBriefingId = briefings.length > 0 ? briefings[0].id : null;
 
 	const [selectedId, setSelectedId] = useState<number | null>(defaultBriefingId);
-	const [dark, setDark] = useState(false);
+	// 'system' | 'dark' | 'light' — null in localStorage means system
+	const [theme, setTheme] = useState<'system' | 'dark' | 'light'>('system');
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [emailOn, setEmailOn] = useState(emailEnabled);
 	const [drawer, setDrawer] = useState<DrawerState | null>(null);
@@ -93,8 +95,10 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 	// Restore persisted state once on mount (after hydration)
 	useEffect(() => {
 		try {
-			const savedDark = localStorage.getItem('intel-dark');
-			if (savedDark !== null) setDark(savedDark === '1');
+			const savedTheme = localStorage.getItem('intel-theme');
+			if (savedTheme === 'dark') setTheme('dark');
+			else if (savedTheme === 'light') setTheme('light');
+			else setTheme('system');
 
 			const savedView = sessionStorage.getItem('intel-view') as View | null;
 			if (savedView && ['briefing', 'preserved', 'feed'].includes(savedView)) setView(savedView);
@@ -113,12 +117,24 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 		setHydrated(true);
 	}, []);
 
-	// Persist dark mode across sessions
+	// Apply and persist theme. 'system' removes the override so prefers-color-scheme takes effect.
 	useEffect(() => {
 		if (!hydrated) return;
-		document.documentElement.classList.toggle('dark', dark);
-		try { localStorage.setItem('intel-dark', dark ? '1' : '0'); } catch { /* */ }
-	}, [dark, hydrated]);
+		const mq = window.matchMedia('(prefers-color-scheme: dark)');
+		const apply = () => {
+			const isDark = theme === 'dark' || (theme === 'system' && mq.matches);
+			document.documentElement.classList.toggle('dark', isDark);
+		};
+		apply();
+		try {
+			if (theme === 'system') localStorage.removeItem('intel-theme');
+			else localStorage.setItem('intel-theme', theme);
+		} catch { /* */ }
+		if (theme === 'system') {
+			mq.addEventListener('change', apply);
+			return () => mq.removeEventListener('change', apply);
+		}
+	}, [theme, hydrated]);
 
 	const persistView = (v: View) => {
 		setView(v);
@@ -274,11 +290,12 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 					</div>
 					<div className="flex items-center gap-1">
 						<button
-							onClick={() => setDark(d => !d)}
+							onClick={() => setTheme(t => t === 'system' ? 'dark' : t === 'dark' ? 'light' : 'system')}
 							className="mt-1 p-2 rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-							aria-label="Toggle colour mode"
+							aria-label={theme === 'system' ? 'Using system theme' : theme === 'dark' ? 'Dark mode' : 'Light mode'}
+							title={theme === 'system' ? 'System theme (click for dark)' : theme === 'dark' ? 'Dark mode (click for light)' : 'Light mode (click for system)'}
 						>
-							{dark ? <IconSun size={18} /> : <IconMoon size={18} />}
+							{theme === 'dark' ? <IconSun size={18} /> : theme === 'light' ? <IconMoon size={18} /> : <IconDeviceLaptop size={18} />}
 						</button>
 						<button
 							onClick={() => persistSidebar(false)}

@@ -66,7 +66,7 @@ export default function RootLayout({
 		<html lang="en">
 			<head>
 				{/* Inline script — no network round-trip, runs synchronously during HTML parse before first paint */}
-				<Script id="theme-init" strategy="beforeInteractive">{`(function(){try{if(localStorage.getItem('intel-dark')==='1')document.documentElement.classList.add('dark')}catch(e){}})();`}</Script>
+				<Script id="theme-init" strategy="beforeInteractive">{`(function(){try{var t=localStorage.getItem('intel-theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}})();`}</Script>
 			</head>
 			<body className={`${inter.variable} ${dmSerif.variable} ${geistMono.variable} antialiased`}>
 				{children}
