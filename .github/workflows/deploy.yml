@@ -1,13 +1,31 @@
 name: Deploy Workers
 
 on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which worker to deploy
+        required: true
+        default: both
+        type: choice
+        options: [both, scraper, dashboard]
   push:
     branches: [master]
+    paths:
+      - 'scraper-worker/src/**'
+      - 'scraper-worker/wrangler.jsonc'
+      - 'scraper-worker/package.json'
+      - 'dashboard/src/**'
+      - 'dashboard/wrangler.jsonc'
+      - 'dashboard/package.json'
 
 jobs:
   deploy-scraper:
     name: Deploy scraper worker
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' && (inputs.target == 'both' || inputs.target == 'scraper') ||
+      github.event_name == 'push'
     defaults:
       run:
         working-directory: scraper-worker
@@ -27,6 +45,9 @@ jobs:
   deploy-dashboard:
     name: Deploy dashboard worker
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' && (inputs.target == 'both' || inputs.target == 'dashboard') ||
+      github.event_name == 'push'
     defaults:
       run:
         working-directory: dashboard
