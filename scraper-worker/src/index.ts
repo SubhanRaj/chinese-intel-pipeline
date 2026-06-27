@@ -363,6 +363,12 @@ async function scrapeGeneric(url: string, sourceName: string): Promise<ScrapedAr
 		console.warn(`[GENERIC] ${sourceName}: only ${text.length} chars — likely JS-rendered, skipping`);
 		return [];
 	}
+	// If the title looks like a website/portal name rather than an article headline, skip.
+	// Article titles tend to be short (<60 chars) and don't contain site-name markers.
+	if (/网_|新闻源|首页|门户|_/.test(title) || title.length > 60) {
+		console.warn(`[GENERIC] ${sourceName}: title looks like a website header ("${title.slice(0, 50)}") — skipping`);
+		return [];
+	}
 	console.log(`[GENERIC] ${sourceName}: ${text.length} chars`);
 	return [{ title, full_text: text, url, source: sourceName }];
 }
@@ -702,7 +708,7 @@ async function filterAndAnalyseWithAI(ai: any, articles: ScrapedArticle[]): Prom
 	console.log(`[COMBINED AI] Sending ${inputArticles.length} of ${articles.length} articles`);
 
 	const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
-		max_tokens: 4096,
+		max_tokens: 16384,
 		messages: [
 			{ role: 'system', content: COMBINED_PROMPT },
 			{ role: 'user', content: JSON.stringify(inputArticles) },

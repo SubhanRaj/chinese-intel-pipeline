@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, DM_Serif_Display, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 // Inter — clean, professional sans-serif for all UI and body text
@@ -63,6 +64,10 @@ export default function RootLayout({
 }>) {
 	return (
 		<html lang="en">
+			<head>
+				{/* Runs synchronously before first paint — prevents dark mode flash on refresh */}
+				<Script src="/theme-init.js" strategy="beforeInteractive" />
+			</head>
 			<body className={`${inter.variable} ${dmSerif.variable} ${geistMono.variable} antialiased`}>
 				{children}
 			</body>

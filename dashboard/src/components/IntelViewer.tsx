@@ -77,6 +77,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [drawer, setDrawer] = useState<DrawerState | null>(null);
 	const [preservedDrawer, setPreservedDrawer] = useState<IntelArticle | null>(null);
+	const [preservedExpanded, setPreservedExpanded] = useState(false);
 	const [view, setView] = useState<View>('briefing');
 	const [preSearchView, setPreSearchView] = useState<View>('briefing');
 	// searchInput = what the user is typing; searchQuery = committed on Enter/submit
@@ -114,14 +115,6 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 		document.documentElement.classList.toggle('dark', dark);
 		try { localStorage.setItem('intel-dark', dark ? '1' : '0'); } catch { /* */ }
 	}, [dark, hydrated]);
-
-	// Apply dark class immediately on first render before hydration completes
-	useEffect(() => {
-		try {
-			const savedDark = localStorage.getItem('intel-dark');
-			if (savedDark === '1') document.documentElement.classList.add('dark');
-		} catch { /* */ }
-	}, []);
 
 	const persistView = (v: View) => {
 		setView(v);
@@ -293,82 +286,38 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 					</div>
 				</div>
 
-				<nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4 min-h-0">
-					{/* ── Preserved ── */}
-					{(() => {
-						const sq = searchInput.toLowerCase();
-						const filtered = preservedArticles.filter(a =>
-							!sq || (a.title?.toLowerCase().includes(sq)) || a.trackingDate.includes(sq)
-						);
-						if (preservedArticles.length === 0 && !sq) return null;
-						if (sq && filtered.length === 0) return null;
-						return (
-							<div>
-								<button
-									onClick={() => { persistView('preserved'); clearSearch(); closeSidebarMobile(); }}
-									className={[
-										'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors',
-										view === 'preserved' ? 'bg-amber-50 dark:bg-amber-500/10' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
-									].join(' ')}
-								>
-									<span className="text-sm font-bold tracking-widest uppercase text-amber-600 dark:text-amber-500 flex items-center gap-1.5">
-										<IconBookmarkFilled size={12} />
-										Preserved ({filtered.length})
-									</span>
-									<IconChevronRight size={11} className="text-amber-500" />
-								</button>
-								{filtered.map(a => (
-									<button
-										key={a.id}
-										onClick={() => { setPreservedDrawer(a); closeSidebarMobile(); }}
-										className="w-full text-left rounded-lg px-3 py-2 mb-0.5 flex items-start gap-2.5 transition-all duration-100 text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 group"
-									>
-										<IconBookmark size={13} className="shrink-0 mt-0.5 text-amber-500" />
-										<div className="flex-1 min-w-0">
-											<p className="text-sm font-medium leading-snug truncate text-slate-800 dark:text-slate-200">{a.title ?? 'Untitled'}</p>
-											<p className="text-[11px] text-slate-500 font-mono mt-0.5">{a.trackingDate}</p>
-										</div>
-										<IconChevronRight size={11} className="shrink-0 mt-1 opacity-0 group-hover:opacity-100 text-slate-400 transition-opacity" />
-									</button>
-								))}
-								<div className="mt-3 border-t border-slate-200 dark:border-slate-800" />
-							</div>
-						);
-					})()}
+				{/* ── Today's Feed — right under the header ── */}
+				{(() => {
+					const sq = searchInput.toLowerCase();
+					const matches = !sq || 'feed'.includes(sq) || "today's feed".includes(sq)
+						|| todayFeed.some(a => (a.titleEn ?? a.title).toLowerCase().includes(sq));
+					if (!todayFeed.length || !matches) return null;
+					return (
+						<div className="shrink-0 px-2 pt-3 pb-2 border-b border-slate-200 dark:border-slate-800">
+							<button
+								onClick={() => { persistView('feed'); clearSearch(); closeSidebarMobile(); }}
+								className={[
+									'w-full px-3 flex items-center justify-between rounded-lg py-2 transition-colors',
+									view === 'feed' ? 'bg-emerald-50 dark:bg-emerald-500/10' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
+								].join(' ')}
+							>
+								<span className="text-sm font-bold tracking-widest uppercase text-emerald-600 dark:text-emerald-500 flex items-center gap-1.5">
+									<IconLayoutGrid size={12} />
+									Today&apos;s Feed ({todayFeed.length})
+								</span>
+								<IconChevronRight size={11} className="text-emerald-500" />
+							</button>
+						</div>
+					);
+				})()}
 
-					{/* ── Today's Feed ── */}
-					{(() => {
-						const sq = searchInput.toLowerCase();
-						const matches = !sq || 'feed'.includes(sq) || "today's feed".includes(sq)
-							|| todayFeed.some(a => (a.titleEn ?? a.title).toLowerCase().includes(sq));
-						if (!todayFeed.length || !matches) return null;
-						return (
-							<div>
-								<button
-									onClick={() => { persistView('feed'); clearSearch(); closeSidebarMobile(); }}
-									className={[
-										'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors',
-										view === 'feed' ? 'bg-emerald-50 dark:bg-emerald-500/10' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60',
-									].join(' ')}
-								>
-									<span className="text-sm font-bold tracking-widest uppercase text-emerald-600 dark:text-emerald-500 flex items-center gap-1.5">
-										<IconLayoutGrid size={12} />
-										Today's Feed ({todayFeed.length})
-									</span>
-									<IconChevronRight size={11} className="text-emerald-500" />
-								</button>
-								<div className="mt-2 border-t border-slate-200 dark:border-slate-800" />
-							</div>
-						);
-					})()}
-
-					{/* ── Briefings list ── */}
+				{/* ── Briefings list — scrollable ── */}
+				<nav className="flex-1 overflow-y-auto py-3 px-2 min-h-0">
 					{(() => {
 						const sq = searchInput.toLowerCase();
 						const filteredBriefings = briefings.filter(b => {
 							if (!sq) return true;
 							if (b.trackingDate.includes(sq)) return true;
-							// also match if any cluster/article title for that date matches
 							return clusters.some(c => c.trackingDate === b.trackingDate && c.title?.toLowerCase().includes(sq))
 								|| articles.some(a => a.trackingDate === b.trackingDate && a.title?.toLowerCase().includes(sq));
 						});
@@ -408,6 +357,52 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 						);
 					})()}
 				</nav>
+
+				{/* ── Preserved — collapsible, static above search bar ── */}
+				{preservedArticles.length > 0 && (
+					<div className="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+						<button
+							onClick={() => setPreservedExpanded(e => !e)}
+							className="w-full px-5 py-2.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+						>
+							<span className="text-xs font-bold tracking-widest uppercase text-amber-600 dark:text-amber-500 flex items-center gap-1.5">
+								<IconBookmarkFilled size={11} />
+								Preserved ({preservedArticles.length})
+							</span>
+							<IconChevronRight
+								size={13}
+								className={['text-amber-500 transition-transform duration-200', preservedExpanded ? 'rotate-90' : ''].join(' ')}
+							/>
+						</button>
+						{preservedExpanded && (
+							<div className="max-h-52 overflow-y-auto px-2 pb-2">
+								<button
+									onClick={() => { persistView('preserved'); clearSearch(); closeSidebarMobile(); }}
+									className={[
+										'w-full px-3 mb-1 flex items-center justify-between rounded-lg py-1.5 transition-colors text-xs text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10',
+										view === 'preserved' ? 'bg-amber-50 dark:bg-amber-500/10' : '',
+									].join(' ')}
+								>
+									View Archive →
+								</button>
+								{preservedArticles.map(a => (
+									<button
+										key={a.id}
+										onClick={() => { setPreservedDrawer(a); closeSidebarMobile(); }}
+										className="w-full text-left rounded-lg px-3 py-2 mb-0.5 flex items-start gap-2.5 transition-all duration-100 text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 group"
+									>
+										<IconBookmark size={13} className="shrink-0 mt-0.5 text-amber-500" />
+										<div className="flex-1 min-w-0">
+											<p className="text-sm font-medium leading-snug truncate text-slate-800 dark:text-slate-200">{a.title ?? 'Untitled'}</p>
+											<p className="text-[11px] text-slate-500 font-mono mt-0.5">{a.trackingDate}</p>
+										</div>
+										<IconChevronRight size={11} className="shrink-0 mt-1 opacity-0 group-hover:opacity-100 text-slate-400 transition-opacity" />
+									</button>
+								))}
+							</div>
+						)}
+					</div>
+				)}
 
 				<div className="shrink-0 px-3 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
 					<form onSubmit={e => { e.preventDefault(); commitSearch(searchInput); closeSidebarMobile(); }}>
