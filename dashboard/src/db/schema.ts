@@ -56,5 +56,10 @@ export type IntelArticle = typeof intelArticles.$inferSelect;
 export type NewIntelArticle = typeof intelArticles.$inferInsert;
 export type IntelCluster = typeof intelClusters.$inferSelect;
 export type NewIntelCluster = typeof intelClusters.$inferInsert;
+export const settings = sqliteTable('settings', {
+	key:   text('key').primaryKey(),
+	value: text('value').notNull(),
+});
+
 export type TempArticle = typeof tempArticles.$inferSelect;
 export type NewTempArticle = typeof tempArticles.$inferInsert;

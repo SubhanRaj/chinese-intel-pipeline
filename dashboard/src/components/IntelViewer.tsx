@@ -30,7 +30,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { togglePreserve, deleteArticle, unpreserveAndDelete, togglePreserveCluster, deleteCluster } from '@/app/actions';
+import { togglePreserve, deleteArticle, unpreserveAndDelete, togglePreserveCluster, deleteCluster, setEmailEnabled } from '@/app/actions';
 import { safeUrl } from '@/lib/utils';
 import type { IntelBriefing, IntelArticle, IntelCluster, TempArticle } from '@/db/schema';
 
@@ -58,6 +58,7 @@ interface Props {
 	articles: IntelArticle[];
 	clusters: IntelCluster[];
 	feed: TempArticle[];
+	emailEnabled: boolean;
 }
 
 type View = 'briefing' | 'preserved' | 'feed' | 'search';
@@ -69,7 +70,7 @@ interface DrawerState {
 	articles: IntelArticle[];
 }
 
-export default function IntelViewer({ briefings, articles, clusters, feed }: Props) {
+export default function IntelViewer({ briefings, articles, clusters, feed, emailEnabled }: Props) {
 	const defaultBriefingId = briefings.length > 0 ? briefings[0].id : null;
 
 	const [selectedId, setSelectedId] = useState<number | null>(defaultBriefingId);
@@ -403,6 +404,25 @@ export default function IntelViewer({ briefings, articles, clusters, feed }: Pro
 						)}
 					</div>
 				)}
+
+				{/* ── Email toggle ── */}
+				<div className="shrink-0 px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between">
+					<span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-widest">Daily email</span>
+					<button
+						onClick={async () => { await setEmailEnabled(!emailEnabled); }}
+						className={[
+							'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none',
+							emailEnabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
+						].join(' ')}
+						aria-label={emailEnabled ? 'Disable daily email' : 'Enable daily email'}
+						title={emailEnabled ? 'Daily email ON — click to disable' : 'Daily email OFF — click to enable'}
+					>
+						<span className={[
+							'inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform',
+							emailEnabled ? 'translate-x-4' : 'translate-x-1',
+						].join(' ')} />
+					</button>
+				</div>
 
 				<div className="shrink-0 px-3 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
 					<form onSubmit={e => { e.preventDefault(); commitSearch(searchInput); closeSidebarMobile(); }}>

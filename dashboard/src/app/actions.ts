@@ -3,7 +3,7 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
-import { intelArticles } from '@/db/schema';
+import { intelArticles, settings } from '@/db/schema';
 import { revalidatePath } from 'next/cache';
 
 function validId(id: unknown): id is number {
@@ -64,6 +64,15 @@ export async function deleteCluster(ids: number[]) {
 		if (!rows.length || rows[0].isPreserved) continue;
 		await db.delete(intelArticles).where(eq(intelArticles.id, id));
 	}
+	revalidatePath('/');
+}
+
+export async function setEmailEnabled(enabled: boolean) {
+	const { env } = await getCloudflareContext({ async: true });
+	await env.DB
+		.prepare(`INSERT INTO settings (key, value) VALUES ('email_enabled', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+		.bind(enabled ? '1' : '0')
+		.run();
 	revalidatePath('/');
 }
 

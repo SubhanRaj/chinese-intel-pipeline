@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, sql as drizzleSql } from 'drizzle-orm';
-import { intelBriefings, intelArticles, intelClusters, tempArticles } from './db/schema';
+import { intelBriefings, intelArticles, intelClusters, tempArticles, settings } from './db/schema';
 
 export interface Env {
 	DB: D1Database;
@@ -865,158 +865,206 @@ async function runPipeline(env: Env, isCron: boolean): Promise<string> {
 	const trackingDate = `${yyyy}-${mm}-${dd}`;
 	const db = drizzle(env.DB);
 
-	// Idempotency guard — cron runs skip if today's briefing already exists.
-	// HTTP GET (curl) always re-runs so you can force a refresh manually.
+	// ── Idempotency / fallback guard ──────────────────────────────────────────
+	// Both cron and curl skip if today's data already exists.
+	// This prevents curl (triggered manually or accidentally) from overwriting a
+	// successful cron run and consuming the daily neuron budget a second time.
+	// To force a re-run: delete today's temp_articles via wrangler first.
+	const existingFeed = await env.DB
+		.prepare(`SELECT COUNT(*) as cnt FROM temp_articles WHERE tracking_date = ?`)
+		.bind(trackingDate)
+		.first<{ cnt: number }>();
+	if (existingFeed && existingFeed.cnt > 0) {
+		const msg = `[${isCron ? 'CRON' : 'HTTP'}] Today's feed already has ${existingFeed.cnt} articles for ${trackingDate} — skipping to preserve data and neuron budget.`;
+		console.log(msg);
+		return msg;
+	}
+	// Cron also checks the briefing record in case temp_articles was manually cleared
 	if (isCron) {
 		const existing = await db
 			.select()
 			.from(intelBriefings)
 			.where(eq(intelBriefings.trackingDate, trackingDate))
 			.limit(1);
-
 		if (existing.length > 0 && existing[0].aiAnalysisMarkdown) {
-			const msg = `Already processed ${trackingDate}, skipping.`;
+			const msg = `[CRON] Briefing record exists for ${trackingDate} — skipping.`;
 			console.log(msg);
 			return msg;
 		}
 	}
 
+	// ── Scrape ───────────────────────────────────────────────────────────────
 	const sources = buildSources(yyyy, mm, dd);
-	console.log('Fetch engine: scraping all sources…');
-	const scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
-	console.log(`Fetch engine yielded ${scrapedArticles.length} articles.`);
+	console.log(`[PIPELINE] Fetch engine: scraping ${sources.length} sources…`);
+	let scrapedArticles: ScrapedArticle[] = [];
+	try {
+		scrapedArticles = await fetchAndParseSources(sources, yyyy, mm, dd);
+		console.log(`[PIPELINE] Fetch engine yielded ${scrapedArticles.length} articles.`);
+	} catch (scrapeErr) {
+		console.error('[PIPELINE] Scraping failed:', scrapeErr);
+		return `Pipeline failed at scrape: ${(scrapeErr as Error).message}`;
+	}
 
 	if (scrapedArticles.length === 0) {
-		const msg = `No articles scraped for ${trackingDate}.`;
+		const msg = `[PIPELINE] No articles scraped for ${trackingDate}.`;
 		console.warn(msg);
 		return msg;
 	}
 
-	// ── Step 1: Clear today's temp articles + purge other dates ──
-	// Wipe today's rows first so re-runs (curl + cron on same day) don't accumulate duplicates.
+	// ── Step 1: AI Pass 1 — filter + analyse ─────────────────────────────────
+	// IMPORTANT: temp_articles is NOT cleared yet. If this call throws, the old
+	// feed remains intact (yesterday's data or empty) rather than being wiped.
+	console.log(`[PIPELINE] AI Pass 1: filter + analyse ${scrapedArticles.length} articles…`);
+	let combinedDecisions: CombinedDecision[];
+	try {
+		combinedDecisions = await filterAndAnalyseWithAI(env.AI, scrapedArticles);
+	} catch (aiErr) {
+		// Log full error for CF Workers observability (visible in dashboard logs)
+		console.error('[PIPELINE] AI Pass 1 failed — temp_articles NOT cleared, old feed preserved:', aiErr);
+		return `Pipeline failed at AI pass 1: ${(aiErr as Error).message}`;
+	}
+
+	// ── Step 2: Clear + repopulate temp_articles (AI succeeded) ──────────────
+	// Only clear NOW that we have fresh AI output — a failed AI call above won't
+	// leave an empty feed since we returned early.
 	await env.DB.prepare(`DELETE FROM temp_articles WHERE tracking_date = ?`).bind(trackingDate).run();
 	await env.DB.prepare(`DELETE FROM temp_articles WHERE tracking_date != ?`).bind(trackingDate).run();
 
-	// ── Step 2: Combined pass — filter + analyse all articles in one AI call ──
-	console.log(`Combined pass: filter + analyse ${scrapedArticles.length} articles…`);
-	const combinedDecisions = await filterAndAnalyseWithAI(env.AI, scrapedArticles);
-
-	// ── Step 3: Store ALL articles in temp_articles (visible in Today's Feed, 24h lifespan) ──
 	for (let i = 0; i < scrapedArticles.length; i++) {
 		const scraped = scrapedArticles[i];
 		const decision = combinedDecisions.find(d => d.index === i);
-		await db.insert(tempArticles).values({
-			trackingDate,
-			title: scraped.title,
-			titleEn: decision?.title_en ?? scraped.title,
-			fullText: scraped.full_text,
-			url: scraped.url,
-			source: scraped.source,
-			isImportant: decision?.important ? 1 : 0,
-			importanceReason: decision?.reason ?? null,
-			parseType: scraped.parseType ?? 'full',
-		});
+		try {
+			await db.insert(tempArticles).values({
+				trackingDate,
+				title: scraped.title,
+				titleEn: decision?.title_en ?? scraped.title,
+				fullText: scraped.full_text,
+				url: scraped.url,
+				source: scraped.source,
+				isImportant: decision?.important ? 1 : 0,
+				importanceReason: decision?.reason ?? null,
+				parseType: scraped.parseType ?? 'full',
+			});
+		} catch (insertErr) {
+			console.error(`[PIPELINE] temp_articles insert failed for "${scraped.title}":`, insertErr);
+		}
 	}
-	console.log(`Stored ${scrapedArticles.length} articles in temp_articles.`);
+	console.log(`[PIPELINE] Stored ${scrapedArticles.length} articles in temp_articles.`);
 
-	// ── Step 4: Collect important articles for clustering ──
+	// ── Step 3: Collect important articles ───────────────────────────────────
 	const importantDecisions = combinedDecisions.filter(d => d.important);
 	const importantScraped = importantDecisions.map(d => scrapedArticles[d.index]).filter(Boolean);
-	// Map to AiArticle shape for the cluster pass (url comes from scraped, not AI output)
-	const aiArticles: AiArticle[] = importantDecisions.map((d, i) => ({
+	const aiArticles: AiArticle[] = importantDecisions.map((d) => ({
 		title: d.title_en,
 		summary: d.summary || 'Analysis unavailable.',
 		full_text_en: d.full_text_en || '',
 		url: scrapedArticles[d.index]?.url ?? '',
 		category: d.category || 'Uncategorized',
 	}));
-	console.log(`${importantDecisions.length} articles marked important, proceeding to cluster pass…`);
+	console.log(`[PIPELINE] ${importantDecisions.length} articles marked important.`);
 
-	// ── Step 5: Upsert briefing parent record ──
+	// ── Step 4: Upsert briefing parent record ────────────────────────────────
 	const rawScrapedText = scrapedArticles
 		.map(a => `[${a.url}]\n${a.title}\n${a.full_text}`)
 		.join('\n\n---\n\n');
+	try {
+		await db
+			.insert(intelBriefings)
+			.values({ trackingDate, rawScrapedText, aiAnalysisMarkdown: 'articles', emailStatus: 0 })
+			.onConflictDoUpdate({
+				target: intelBriefings.trackingDate,
+				set: { rawScrapedText, aiAnalysisMarkdown: 'articles', emailStatus: 0 },
+			});
+	} catch (briefingErr) {
+		console.error('[PIPELINE] intel_briefings upsert failed:', briefingErr);
+		// Non-fatal — continue so intel_articles and clusters are still saved
+	}
 
-	await db
-		.insert(intelBriefings)
-		.values({ trackingDate, rawScrapedText, aiAnalysisMarkdown: 'articles', emailStatus: 0 })
-		.onConflictDoUpdate({
-			target: intelBriefings.trackingDate,
-			set: { rawScrapedText, aiAnalysisMarkdown: 'articles', emailStatus: 0 },
-		});
-
-	// ── Step 6: Pass 3 — cluster same-topic articles across sources ──
+	// ── Step 5: AI Pass 2 — cluster ──────────────────────────────────────────
 	const articlesWithSource: AiArticleWithSource[] = aiArticles.map((a, i) => ({
 		...a,
 		source: importantScraped[i]?.source ?? 'Unknown',
 	}));
-	console.log(`Pass 3: clustering ${articlesWithSource.length} articles…`);
-	const clusters = await clusterArticlesWithAI(env.AI, articlesWithSource);
-
-	// ── Step 7: Clear today's intel data then re-insert fresh ──
-	// Re-runs on the same day (curl + cron) would otherwise stack duplicate clusters/articles.
-	// Preserved articles are kept; their cluster_id becomes stale but they remain visible in Archive.
-	await env.DB.prepare(`DELETE FROM intel_articles WHERE tracking_date = ? AND is_preserved = 0`).bind(trackingDate).run();
-	await env.DB.prepare(`DELETE FROM intel_clusters WHERE tracking_date = ?`).bind(trackingDate).run();
-	for (const cluster of clusters) {
-		const clusterSources = [
-			...new Set(cluster.article_indices.map(i => importantScraped[i]?.source).filter(Boolean) as string[]),
-		];
-
-		const clusterRows = await db
-			.insert(intelClusters)
-			.values({
-				trackingDate,
-				title: cluster.title,
-				summary: cluster.summary,
-				category: cluster.category,
-				sources: JSON.stringify(clusterSources),
-			})
-			.returning({ id: intelClusters.id });
-
-		const clusterId = clusterRows[0].id;
-
-		// Backfill cluster_id on temp_articles for each article in this cluster
-		for (const idx of cluster.article_indices) {
-			const scraped = importantScraped[idx];
-			if (scraped) {
-				await env.DB.prepare(
-					`UPDATE temp_articles SET cluster_id = ? WHERE tracking_date = ? AND url = ?`,
-				).bind(clusterId, trackingDate, scraped.url).run();
-			}
-		}
-
-		for (const idx of cluster.article_indices) {
-			const ai = aiArticles[idx];
-			const scraped = importantScraped[idx];
-			if (!ai || !scraped) continue;
-			await db.insert(intelArticles).values({
-				trackingDate,
-				title: ai.title ?? scraped.title,
-				summary: ai.summary,
-				fullText: scraped.full_text,
-				fullTextEn: ai.full_text_en,
-				url: ai.url || scraped.url,
-				category: ai.category ?? null,
-				source: scraped.source ?? null,
-				isPreserved: 0,
-				clusterId,
-				parseType: scraped.parseType ?? 'full',
-			});
-		}
+	console.log(`[PIPELINE] AI Pass 2: clustering ${articlesWithSource.length} articles…`);
+	let clusters: ClusterResult[];
+	try {
+		clusters = await clusterArticlesWithAI(env.AI, articlesWithSource);
+	} catch (clusterErr) {
+		// Clustering failure is non-fatal: save articles as individual single-item clusters
+		console.error('[PIPELINE] AI Pass 2 failed — saving articles without clusters:', clusterErr);
+		clusters = aiArticles.map((a, i) => ({
+			title: a.title,
+			summary: a.summary,
+			category: a.category,
+			article_indices: [i],
+		}));
 	}
 
-	console.log(`Saved ${clusters.length} clusters (${aiArticles.length} articles) to D1.`);
+	// ── Step 6: Persist intel data ───────────────────────────────────────────
+	try {
+		await env.DB.prepare(`DELETE FROM intel_articles WHERE tracking_date = ? AND is_preserved = 0`).bind(trackingDate).run();
+		await env.DB.prepare(`DELETE FROM intel_clusters WHERE tracking_date = ?`).bind(trackingDate).run();
+
+		for (const cluster of clusters) {
+			const clusterSources = [
+				...new Set(cluster.article_indices.map(i => importantScraped[i]?.source).filter(Boolean) as string[]),
+			];
+			const clusterRows = await db
+				.insert(intelClusters)
+				.values({ trackingDate, title: cluster.title, summary: cluster.summary, category: cluster.category, sources: JSON.stringify(clusterSources) })
+				.returning({ id: intelClusters.id });
+			const clusterId = clusterRows[0].id;
+
+			for (const idx of cluster.article_indices) {
+				const scraped = importantScraped[idx];
+				if (scraped) {
+					await env.DB.prepare(
+						`UPDATE temp_articles SET cluster_id = ? WHERE tracking_date = ? AND url = ?`,
+					).bind(clusterId, trackingDate, scraped.url).run();
+				}
+			}
+			for (const idx of cluster.article_indices) {
+				const ai = aiArticles[idx];
+				const scraped = importantScraped[idx];
+				if (!ai || !scraped) continue;
+				await db.insert(intelArticles).values({
+					trackingDate,
+					title: ai.title ?? scraped.title,
+					summary: ai.summary,
+					fullText: scraped.full_text,
+					fullTextEn: ai.full_text_en,
+					url: ai.url || scraped.url,
+					category: ai.category ?? null,
+					source: scraped.source ?? null,
+					isPreserved: 0,
+					clusterId,
+					parseType: scraped.parseType ?? 'full',
+				});
+			}
+		}
+		console.log(`[PIPELINE] Saved ${clusters.length} clusters (${aiArticles.length} articles) to D1.`);
+	} catch (saveErr) {
+		console.error('[PIPELINE] Failed to save intel data to D1:', saveErr);
+		// temp_articles is already populated — Today's Feed will still work
+	}
 
 	// 30-day cleanup of unpreserved articles
-	await env.DB.prepare(
-		`DELETE FROM intel_articles WHERE created_at <= datetime('now', '-30 days') AND is_preserved = 0`,
-	).run();
+	try {
+		await env.DB.prepare(
+			`DELETE FROM intel_articles WHERE created_at <= datetime('now', '-30 days') AND is_preserved = 0`,
+		).run();
+	} catch { /* non-fatal */ }
 
-	if (env.ENABLE_EMAIL === 'true') {
-		console.log('Email dispatch enabled — sending via Resend…');
-		try {
-			// Email one entry per cluster (synthesised title + summary); link to first article URL
+	// ── Step 7: Email ─────────────────────────────────────────────────────────
+	// Read email_enabled from D1 settings (togglable from dashboard UI)
+	try {
+		const emailSetting = await env.DB
+			.prepare(`SELECT value FROM settings WHERE key = 'email_enabled'`)
+			.first<{ value: string }>();
+		const emailEnabled = emailSetting?.value === '1';
+
+		if (emailEnabled) {
+			console.log('[PIPELINE] Email enabled — sending via Resend…');
 			const emailArticles: AiArticle[] = clusters.map(c => ({
 				title: c.title,
 				summary: c.summary,
@@ -1024,45 +1072,41 @@ async function runPipeline(env: Env, isCron: boolean): Promise<string> {
 				url: aiArticles[c.article_indices[0]]?.url ?? '',
 				category: c.category,
 			}));
-			await sendEmail(
-				env.RESEND_API_KEY,
-				env.RESEND_FROM_EMAIL,
-				env.RESEND_TO_EMAIL,
-				trackingDate,
-				emailArticles,
-			);
-			await db
-				.update(intelBriefings)
-				.set({ emailStatus: 1 })
-				.where(eq(intelBriefings.trackingDate, trackingDate));
-			console.log('Email sent successfully.');
-		} catch (err) {
-			console.error('Email send failed (briefing saved):', err);
+			await sendEmail(env.RESEND_API_KEY, env.RESEND_FROM_EMAIL, env.RESEND_TO_EMAIL, trackingDate, emailArticles);
+			await db.update(intelBriefings).set({ emailStatus: 1 }).where(eq(intelBriefings.trackingDate, trackingDate));
+			console.log('[PIPELINE] Email sent successfully.');
+		} else {
+			console.log('[PIPELINE] Email disabled (settings.email_enabled = 0).');
 		}
-	} else {
-		console.log('Email dispatch disabled via ENABLE_EMAIL flag.');
+	} catch (emailErr) {
+		console.error('[PIPELINE] Email step failed (briefing already saved):', emailErr);
 	}
 
-	return `Pipeline completed for ${trackingDate} — ${aiArticles.length} articles.`;
+	return `Pipeline completed for ${trackingDate} — ${aiArticles.length} important articles in ${clusters.length} clusters.`;
 }
 
 // ---------- handlers ----------
 
 export default {
-	// HTTP trigger: always re-runs fetch engine (no idempotency).
-	// Use for manual refreshes: curl https://scraper-worker.shubhanraj2002.workers.dev
+	// HTTP trigger: fallback mode — skips if today's feed already exists (cron already ran).
+	// To force a re-run: delete today's temp_articles via wrangler, then curl again.
 	async fetch(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
 		try {
 			const result = await runPipeline(env, false);
 			return new Response(result, { status: 200 });
 		} catch (error) {
+			console.error('[HANDLER] Unhandled pipeline error:', error);
 			return new Response(`Pipeline error: ${(error as Error).message}`, { status: 500 });
 		}
 	},
 
-	// Cron trigger: fetch engine with idempotency guard (once per CST date).
+	// Cron trigger: same fallback guard + extra check on briefing record.
 	async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
-		console.log('Cron trigger fired. Starting pipeline…');
-		await runPipeline(env, true);
+		console.log('[CRON] Trigger fired. Starting pipeline…');
+		try {
+			await runPipeline(env, true);
+		} catch (error) {
+			console.error('[CRON] Unhandled pipeline error:', error);
+		}
 	},
 };
