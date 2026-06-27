@@ -19,23 +19,31 @@ Cloudflare Worker (fetch engine scraper) → Cloudflare D1 (SQLite) → Next.js 
 
 | Trigger | Idempotency | Use |
 |---|---|---|
-| HTTP GET (curl) | Skipped — always re-runs | Manual testing / re-runs |
-| Cron `30 1 * * *` UTC | Enforced — once per CST date | Production daily run |
+| HTTP GET (curl) | Skips if today's `temp_articles` has data | Manual re-run / fallback |
+| Cron `30 1 * * *` UTC | Skips if today's `temp_articles` OR `intel_briefings` exists | Production daily run |
 
-Both paths use the identical fetch engine. **No Puppeteer, no Browser Rendering.** The idempotency check looks for an existing `intel_briefings` row for today's CST date. If a curl run happens after 16:00 UTC (= midnight CST), it creates a next-day record that will block the cron. This is a known footgun.
+Both paths use the identical fetch engine. **No Puppeteer, no Browser Rendering.**
 
-**temp_articles is cleared at the START of each run** before the AI call. If the AI call fails (e.g. context limit exceeded), temp_articles will be empty until the next successful run. This means Today's Feed disappears on failed runs.
+**To force a re-run after curl/cron already ran today:** delete today's temp_articles first:
+```bash
+npx wrangler d1 execute intel_briefings_db --remote --command \
+  "DELETE FROM temp_articles WHERE tracking_date='YYYY-MM-DD'"
+```
+
+## Pipeline resilience
+
+- **temp_articles is cleared AFTER AI Pass 1 succeeds.** If Pass 1 fails, old feed data is preserved. Previously, temp_articles was cleared at the start — a failed AI call left the feed empty until the next run.
+- **Pass 2 (cluster) failure is non-fatal.** Falls back to single-item clusters; intel_articles still saved.
+- **All scrape + AI steps wrapped in try-catch** with console.error logging. Errors are surfaced as log messages, not Worker crashes.
 
 ## Two AI passes
 
 - **Pass 1 — filter + analyse:** All scraped articles sent with title + 250-char snippet. Returns `important: true/false` + full analysis for important ones. Budget: 10,000 chars input (~40 articles). max_tokens: 14,000.
-- **Pass 2 — cluster:** Important articles grouped across sources into clusters with synthesised headline. max_tokens: 2,048.
+- **Pass 2 — cluster:** Important articles grouped across sources into clusters with synthesised headline. max_tokens: 2,048. Input sliced at 12,000 chars (previously 4,000 — caused clustering to silently fail when article list exceeded the cap).
 
 Both passes use `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Never downgrade to a smaller model.
 
-## Scraping: 6 dedicated scrapers + 1 generic (fetch engine only)
-
-**Puppeteer was removed 2026-06-27.** The generic scrapeUrl() function was worse than dedicated scrapers and the 10 min/day free cap made it unusable.
+## Scraping: 6 dedicated scrapers (fetch engine only)
 
 | Source | Scraper | How it works |
 |---|---|---|
@@ -47,26 +55,40 @@ Both passes use `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Never downgrade to a
 | Fujian Daily | `scrapeFujian()` | `fjrb.fjdaily.com/pc/col/node_01` → relative `../../../con/…` links |
 | Sichuan Daily | — | JS SPA with no static article URL pattern. No coverage — 0 subrequests. |
 
-## Database: three tiers
+## Database: four tiers
 
 | Table | Content | Lifetime |
 |---|---|---|
-| `temp_articles` | All scraped articles (important + not), 24h feed | Deleted at next run START (before AI call) |
+| `temp_articles` | All scraped articles (important + not), 24h feed | Cleared after next successful AI Pass 1 |
 | `intel_clusters` + `intel_articles` | Important articles, fully analysed and clustered | 30 days → auto-cleanup |
 | `intel_articles` where `is_preserved=1` | Hand-preserved articles | Permanent |
+| `settings` | Pipeline config (email toggle) | Persistent key-value store |
 
 **URLs are stored for ALL articles** including non-important ones in `temp_articles.url`. The dashboard shows a ↗ source link on every card.
+
+**`settings` table keys:**
+- `email_enabled`: `'0'` = off (default), `'1'` = on. Toggled from dashboard sidebar UI. No Worker redeploy needed.
 
 ## Key files
 
 ```
 scraper-worker/src/index.ts    — all pipeline logic (scraping, AI, storage, email)
 scraper-worker/wrangler.jsonc  — bindings (D1, AI), cron 30 1 * * * (no BROWSER binding)
-dashboard/src/app/page.tsx     — server component, DB queries
-dashboard/src/components/IntelViewer.tsx — all client UI
-dashboard/src/app/actions.ts   — server actions (preserve/delete)
-dashboard/public/theme-init.js — dark mode FOUC fix (runs before first paint)
+dashboard/src/app/page.tsx     — server component, queries all five tables (incl. settings)
+dashboard/src/components/IntelViewer.tsx — all client UI (sidebar, feed, briefing, email toggle, GitHub link)
+dashboard/src/app/actions.ts   — server actions (preserve/delete article & cluster; setEmailEnabled)
+dashboard/src/app/layout.tsx   — inline dark-mode script in <head> (beforeInteractive — no FOUC)
 ```
+
+## Dashboard features
+
+- **Today's Feed** — all scraped articles grouped by source newspaper, collapsed by default. Click source header to expand. AI reasoning shown for every article.
+- **Intel Briefing** — clustered important articles. Multi-source stories → one card with N-sources badge and per-source drawer.
+- **Archive (Preserved)** — bookmarked articles, exempt from 30-day cleanup.
+- **Search** — sidebar search across all dates.
+- **Dark mode** — persisted in `localStorage`. Inline `<Script strategy="beforeInteractive">` in layout.tsx adds `dark` class to `<html>` before first paint — no flash on refresh.
+- **Email toggle** — on/off switch in sidebar. Writes to D1 `settings` table. Email address stays in CF secrets.
+- **GitHub link** — sidebar footer.
 
 ## Things to never do
 
@@ -74,9 +96,10 @@ dashboard/public/theme-init.js — dark mode FOUC fix (runs before first paint)
 - Don't add a new fetch call in the hot path without removing one elsewhere.
 - Don't change the AI model to something smaller — use `@cf/meta/llama-3.3-70b-instruct-fp8-fast`.
 - Don't set `max_tokens` > (24000 − expected_input_tokens − 500). Current safe ceiling is 14,000.
-- Don't add a BROWSER binding back — Puppeteer was removed intentionally.
+- Don't add a BROWSER binding back — Puppeteer was removed 2026-06-27 intentionally.
 - Don't use `dangerouslySetInnerHTML` anywhere in the dashboard.
-- Don't commit `.env` or Wrangler secrets to git — they are stored as Wrangler secrets only.
+- Don't commit `.env` or Wrangler secrets to git — stored as Wrangler secrets only.
+- Don't move the temp_articles DELETE back to before the AI call — it was intentionally moved after Pass 1 to preserve feed data on AI failures.
 
 ## Deploy commands
 
@@ -87,7 +110,12 @@ cd scraper-worker && npm run deploy
 # Dashboard
 cd dashboard && npm run deploy
 
-# Test the pipeline (bypasses idempotency — always re-runs)
+# Test the pipeline (skips if today's data already exists)
+curl https://scraper-worker.shubhanraj2002.workers.dev
+
+# Force re-run (delete today's feed first)
+npx wrangler d1 execute intel_briefings_db --remote --command \
+  "DELETE FROM temp_articles WHERE tracking_date='$(date +%Y-%m-%d)'"
 curl https://scraper-worker.shubhanraj2002.workers.dev
 
 # Check D1 data
