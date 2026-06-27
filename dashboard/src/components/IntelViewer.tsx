@@ -88,6 +88,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 	const [searchQuery, setSearchQuery] = useState('');
 	const [, startTransition] = useTransition();
 	const [hydrated, setHydrated] = useState(false);
+	const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
 
 	// Restore persisted state once on mount (after hydration)
 	useEffect(() => {
@@ -668,15 +669,20 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 								</p>
 							</header>
 							{Object.entries(feedBySource).map(([source, arts]) => (
-								<div key={source} className="mb-10">
-									<div className="flex items-center gap-3 mb-4">
-										<h3 className="text-base font-bold tracking-widest uppercase text-slate-600 dark:text-slate-400">
+								<div key={source} className="mb-4">
+									<button
+										onClick={() => setExpandedSources(prev => { const n = new Set(prev); n.has(source) ? n.delete(source) : n.add(source); return n; })}
+										className="w-full flex items-center gap-3 py-1.5 group"
+									>
+										<IconChevronRight size={13} className={['text-slate-400 dark:text-slate-600 shrink-0 transition-transform duration-200', expandedSources.has(source) ? 'rotate-90' : ''].join(' ')} />
+										<h3 className="text-base font-bold tracking-widest uppercase text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">
 											{source}
 										</h3>
 										<div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
 										<span className="text-xs font-mono text-slate-500">{arts.length} articles</span>
-									</div>
-									<div className="space-y-3">
+									</button>
+									{expandedSources.has(source) && (
+									<div className="space-y-3 mt-3">
 										{arts.map(a => {
 											// FK first; fallback finds the intel_article row that actually has cluster_id set
 											// (multiple runs create duplicate rows — we want the one with cluster_id, not just first)
@@ -754,6 +760,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 											);
 										})}
 									</div>
+									)}
 								</div>
 							))}
 						</div>
