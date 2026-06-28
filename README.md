@@ -484,57 +484,73 @@ chinese-intel-pipeline/
 ## Setup & deployment
 
 ### Prerequisites
-- Cloudflare account with Workers, D1, Workers AI enabled
+
+- Cloudflare account with Workers, D1, and Workers AI enabled
+- Node.js 18+
 - `npx wrangler login`
 
-### 1. Create D1 database and apply migrations
+### 1. Create D1 database and apply all migrations
 
 ```bash
 npx wrangler d1 create intel_briefings_db
+# Copy the returned database_id into both wrangler.jsonc files, then:
 cd scraper-worker
 npx wrangler d1 migrations apply intel_briefings_db --remote
 ```
 
 ### 2. Set Worker secrets
 
-```bash
-# Scraper worker
-cd scraper-worker
-npx wrangler secret put RESEND_API_KEY       # ✓ set
-npx wrangler secret put RESEND_FROM_EMAIL    # ✓ set
-# RESEND_TO_EMAIL — no longer used; scraper reads recipients from D1 users table
-npx wrangler secret put SCRAPER_SECRET       # not yet set — will protect HTTP GET trigger
+**Scraper worker** (`cd scraper-worker`):
 
-# Dashboard worker
-cd ../dashboard
-npx wrangler secret put SESSION_SECRET       # ✓ set
-npx wrangler secret put RESEND_API_KEY       # ✓ set (same key as scraper — for magic link emails)
-npx wrangler secret put RESEND_FROM_EMAIL    # ✓ set (onboarding@resend.dev)
+```bash
+npx wrangler secret put RESEND_API_KEY      # Resend API key for briefing emails
+npx wrangler secret put RESEND_FROM_EMAIL   # Verified sender address in Resend
+npx wrangler secret put SCRAPER_SECRET      # Bearer token to protect the HTTP trigger
 ```
 
-Email is **off by default**. Toggle it on via the dashboard UI (sidebar email switch). The switch writes to D1 — no Worker redeploy needed.
+**Dashboard worker** (`cd dashboard`):
 
-### 3. Deploy
+```bash
+npx wrangler secret put SESSION_SECRET      # Random 32+ char string for HMAC session signing
+npx wrangler secret put RESEND_API_KEY      # Same Resend key — used for magic-link auth emails
+npx wrangler secret put RESEND_FROM_EMAIL   # Verified sender address
+```
+
+> Email subscriptions are **per-user** — each user toggles from the sidebar. Default for new users: subscribed. There is no global on/off switch.
+
+### 3. Seed the first admin account
+
+After deploying (step 4), run the auth migration which seeds your admin row, or insert manually:
+
+```bash
+npx wrangler d1 execute intel_briefings_db --remote --command \
+  "INSERT OR IGNORE INTO users (email, name, role) VALUES ('you@example.com', 'Your Name', 'admin')"
+```
+
+Sign in at `/login` — a magic link will be emailed to you.
+
+### 4. Deploy
 
 ```bash
 cd scraper-worker && npm run deploy
 cd ../dashboard && npm run deploy
 ```
 
-### 4. Test (manual trigger)
+### 5. Test the pipeline (manual trigger)
 
 ```bash
-# Current (no auth yet)
-curl https://scraper-worker.shubhanraj2002.workers.dev
-
-# After SCRAPER_SECRET is set (planned)
 curl -H "Authorization: Bearer $SCRAPER_SECRET" \
   https://scraper-worker.shubhanraj2002.workers.dev
 ```
 
-Runs the full two-pass pipeline immediately. The response body shows what happened (e.g. `Pipeline completed for 2026-06-27 — 12 important articles in 5 clusters.`). The daily cron at 01:30 UTC runs automatically via Cloudflare scheduler.
+The response body describes what happened (`Pipeline completed for YYYY-MM-DD — N important articles in M clusters.`). The daily cron at **01:30 UTC** (09:30 CST) runs automatically via Cloudflare's scheduler.
 
-If today's data already exists, the pipeline skips and returns a message. To force a re-run, delete today's temp_articles first (see above).
+If today's data already exists, the pipeline skips and returns a message. To force a re-run:
+
+```bash
+npx wrangler d1 execute intel_briefings_db --remote --command \
+  "DELETE FROM temp_articles WHERE tracking_date='$(date +%Y-%m-%d)'"
+```
 
 ---
 
@@ -543,7 +559,7 @@ If today's data already exists, the pipeline skips and returns a message. To for
 | Service | URL |
 |---|---|
 | Dashboard | `https://intel-pipeline.shubhanraj2002.workers.dev` |
-| Worker (HTTP trigger) | `https://scraper-worker.shubhanraj2002.workers.dev` |
+| Scraper worker (HTTP trigger) | `https://scraper-worker.shubhanraj2002.workers.dev` |
 | GitHub | `https://github.com/SubhanRaj/chinese-intel-pipeline` |
 
 ---
@@ -552,12 +568,13 @@ If today's data already exists, the pipeline skips and returns a message. To for
 
 | Layer | Technology |
 |---|---|
-| Scraper | Native `fetch()` + `HTMLRewriter` (built into Workers runtime) — no browser, no npm dependency |
-| AI Pass 1 — filter + analyse | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — combined filter + analysis using title + 250-char snippet |
-| AI Pass 2 — clustering | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — cross-source story grouping; input sliced at 12k chars |
+| Scraper | Native `fetch()` + `HTMLRewriter` (CF Workers runtime) — no browser, no npm dependency |
+| AI Pass 1 — filter + analyse | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — filter + full analysis in one call |
+| AI Pass 2 — clustering | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — cross-source story grouping |
 | Database | Cloudflare D1 (SQLite) via Drizzle ORM |
-| Email | Resend API — table-layout HTML template (mobile Gmail compatible) |
+| Auth | Custom magic-link + HMAC-signed sessions (CF SubtleCrypto, no third-party auth) |
+| Email | Resend API — inline-CSS HTML template (Gmail-compatible) |
 | Dashboard | Next.js 16 App Router via `@opennextjs/cloudflare` |
-| Styling | Tailwind CSS v4 + Shadcn UI (main app) · DaisyUI v5 via npm (admin panel) |
+| Styling | Tailwind CSS v4 + Shadcn UI — plain Tailwind throughout (no DaisyUI) |
 | Fonts | DM Serif Display + Inter + Geist Mono via `next/font/google` |
 | Icons | Tabler Icons |
