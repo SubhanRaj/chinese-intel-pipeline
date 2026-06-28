@@ -7,7 +7,7 @@ Next.js 16 App Router dashboard deployed as a Cloudflare Worker via `@opennextjs
 - **Framework:** Next.js 16 (App Router)
 - **Runtime:** Cloudflare Worker (`@opennextjs/cloudflare`)
 - **Database:** Cloudflare D1 via Drizzle ORM
-- **Styling:** Tailwind CSS v4 + Shadcn UI (main app) · DaisyUI v5 (admin panel only)
+- **Styling:** Tailwind CSS v4 + Shadcn UI (main app) · plain Tailwind (admin panel)
 - **Auth:** Custom magic-link passwordless auth (SubtleCrypto + D1 sessions)
 - **Email:** Resend (magic link delivery)
 
@@ -36,7 +36,7 @@ src/app/layout.tsx            Fonts, dark-mode inline script (no FOUC)
 src/app/globals.css           Tailwind v4 + Shadcn CSS tokens
 src/app/login/                Magic-link request page
 src/app/auth/verify/          Magic-link verify page (sets session cookie)
-src/app/admin/                User management panel (DaisyUI corporate theme)
+src/app/admin/                User management panel (plain Tailwind, same tokens as main app)
 src/components/IntelViewer.tsx  All client UI (sidebar, briefing, feed, search)
 src/lib/auth.ts               getSession, requireAuth, createSession, deleteSession
 src/db/schema.ts              Drizzle schema (all tables incl. auth)

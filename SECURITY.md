@@ -494,7 +494,7 @@ These are not security vulnerabilities but represent dead surface area that shou
 | 3 | H2 | Dead `toggleUserEmail` server action | ✅ Fixed 2026-06-28 | `dashboard/src/app/admin/actions.ts` |
 | 4 | H3 | No HTTP security headers | ✅ Fixed 2026-06-28 | `dashboard/next.config.ts` |
 | 5 | M2 | `removeUser` self-deletion UI-only guard | ✅ Fixed 2026-06-28 | `dashboard/src/app/admin/actions.ts` |
-| 6 | M1 | Prompt injection → Markdown link XSS | ⏳ Deferred — add `rehype-sanitize` + URL transformer to MarkdownRenderer | `dashboard/src/components/MarkdownRenderer.tsx` |
+| 6 | M1 | Prompt injection → Markdown link XSS | ✅ Fixed 2026-06-28 | `dashboard/src/components/MarkdownRenderer.tsx` |
 | 7 | H1 | No magic link rate limiting | ✅ Fixed 2026-06-28 | `dashboard/src/app/login/actions.ts` |
 | 8 | L3 | Silent `SESSION_SECRET` failure | ✅ Fixed 2026-06-28 | `dashboard/src/lib/auth.ts` |
 | 9 | M4 | Session revocation UI | ✅ Fixed 2026-06-28 (revoke button in admin; duration unchanged) | `dashboard/src/app/admin/` |
