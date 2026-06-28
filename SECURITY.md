@@ -147,7 +147,7 @@ const verifyUrl = `${proto}://${host}/auth/verify?token=${rawToken}`;
 2. Attacker sends `POST /login` with body `email=victim@example.com` and header `Host: attacker.com`.
 3. System generates a valid 128-bit token, stores its hash in D1, and emails `https://attacker.com/auth/verify?token=<token>` to the victim.
 4. Victim clicks link → attacker's server logs the token.
-5. Attacker visits `https://dashboard.shubhanraj2002.workers.dev/auth/verify?token=<token>` → authenticated session.
+5. Attacker visits `https://intel-pipeline.shubhanraj2002.workers.dev/auth/verify?token=<token>` → authenticated session.
 
 **Cloudflare mitigation:** CF normalizes the `Host` header on inbound requests in production, making this difficult to exploit against the deployed Worker directly. However, the vulnerability:
 - Survives in local development / staging environments
@@ -157,7 +157,7 @@ const verifyUrl = `${proto}://${host}/auth/verify?token=${rawToken}`;
 **Fix:**
 ```typescript
 // Replace lines 43-45 in dashboard/src/app/login/actions.ts
-const PRODUCTION_ORIGIN = 'https://dashboard.shubhanraj2002.workers.dev';
+const PRODUCTION_ORIGIN = 'https://intel-pipeline.shubhanraj2002.workers.dev';
 const verifyUrl = `${PRODUCTION_ORIGIN}/auth/verify?token=${rawToken}`;
 ```
 

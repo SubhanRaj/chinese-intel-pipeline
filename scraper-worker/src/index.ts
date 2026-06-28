@@ -605,7 +605,7 @@ async function clusterArticlesWithAI(ai: any, articles: AiArticleWithSource[]): 
 
 // ---------- email ----------
 
-const DASHBOARD_URL = 'https://dashboard.shubhanraj2002.workers.dev';
+const DASHBOARD_URL = 'https://intel-pipeline.shubhanraj2002.workers.dev';
 
 async function sendEmail(
 	resendApiKey: string,

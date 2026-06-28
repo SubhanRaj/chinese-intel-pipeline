@@ -542,7 +542,7 @@ If today's data already exists, the pipeline skips and returns a message. To for
 
 | Service | URL |
 |---|---|
-| Dashboard | `https://dashboard.shubhanraj2002.workers.dev` |
+| Dashboard | `https://intel-pipeline.shubhanraj2002.workers.dev` |
 | Worker (HTTP trigger) | `https://scraper-worker.shubhanraj2002.workers.dev` |
 | GitHub | `https://github.com/SubhanRaj/chinese-intel-pipeline` |
 

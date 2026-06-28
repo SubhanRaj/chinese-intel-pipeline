@@ -33,7 +33,7 @@ export const metadata: Metadata = {
 	openGraph: {
 		type: "website",
 		locale: "en_US",
-		url: "https://dashboard.shubhanraj2002.workers.dev",
+		url: "https://intel-pipeline.shubhanraj2002.workers.dev",
 		siteName: "Chinese Intel Monitor",
 		title: "Chinese Intel Monitor",
 		description:

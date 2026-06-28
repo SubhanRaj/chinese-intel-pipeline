@@ -21,11 +21,11 @@ import { revalidatePath } from 'next/cache';
 //   2. Add the exact host string here (no protocol, no trailing slash) and redeploy.
 //      Example: 'intel.yourdomain.com'
 const ALLOWED_HOSTS: ReadonlySet<string> = new Set([
-	'dashboard.shubhanraj2002.workers.dev',
+	'intel-pipeline.shubhanraj2002.workers.dev',
 	'localhost:3000',
 ]);
 
-const FALLBACK_HOST = 'dashboard.shubhanraj2002.workers.dev';
+const FALLBACK_HOST = 'intel-pipeline.shubhanraj2002.workers.dev';
 
 // ── Request magic link ────────────────────────────────────────────────────────
 
