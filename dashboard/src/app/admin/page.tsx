@@ -5,6 +5,7 @@ import { users, intelBriefings, intelArticles, tempArticles } from '@/db/schema'
 import { getSession } from '@/lib/auth';
 import { addUser, removeUser } from './actions';
 import AddUserForm from './AddUserForm';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default async function AdminPage() {
 	const session = await getSession();
@@ -60,12 +61,15 @@ export default async function AdminPage() {
 						Signed in as {session!.name} · {session!.email}
 					</p>
 				</div>
-				<a
-					href="/"
-					className="mt-1 px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-				>
-					← Dashboard
-				</a>
+				<div className="flex items-center gap-1 mt-1">
+					<ThemeToggle />
+					<a
+						href="/"
+						className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+					>
+						← Dashboard
+					</a>
+				</div>
 			</div>
 
 			{/* Pipeline Stats */}
