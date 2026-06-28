@@ -384,8 +384,8 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 					})()}
 				</nav>
 
-				{/* ── Preserved — collapsible, static above search bar ── */}
-				{preservedArticles.length > 0 && (
+				{/* ── Preserved — signed-in users only ── */}
+				{canPreserve && preservedArticles.length > 0 && (
 					<div className="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
 						<button
 							onClick={() => setPreservedExpanded(e => !e)}
@@ -683,7 +683,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 					})()}
 
 					{/* ── Preserved view ─────────────────────────────────── */}
-					{view === 'preserved' && (
+					{view === 'preserved' && canPreserve && (
 						<div className="max-w-3xl mx-auto px-4 sm:px-10 py-10">
 							<header className="mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
 								<p className="text-xs font-bold tracking-widest uppercase text-amber-600 dark:text-amber-500 mb-2 flex items-center gap-1.5">
