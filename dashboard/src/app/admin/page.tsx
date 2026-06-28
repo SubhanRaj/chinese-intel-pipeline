@@ -6,9 +6,6 @@ import { getSession } from '@/lib/auth';
 import { addUser, removeUser } from './actions';
 import AddUserForm from './AddUserForm';
 
-const card = 'bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800';
-const statCard = `${card} p-5`;
-
 export default async function AdminPage() {
 	const session = await getSession();
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -39,15 +36,26 @@ export default async function AdminPage() {
 	const sources: { source: string; cnt: number }[] = sourceRows.results ?? [];
 	const lastRun = latestBriefing.at(-1)?.trackingDate ?? '—';
 
-	return (
-		<main className="min-h-screen bg-slate-50 dark:bg-slate-950 px-4 py-10">
-		<div className="max-w-5xl mx-auto">
+	const stats = [
+		{ label: 'Briefings',     value: totalBriefings, sub: `Last: ${lastRun}` },
+		{ label: 'Intel articles', value: totalArticles,  sub: `${preservedArticles} preserved` },
+		{ label: "Today's feed",  value: todayFeedCount,  sub: today },
+		{ label: 'Email subs',    value: emailSubCount,   sub: 'subscribed users' },
+	];
 
-			{/* Header */}
-			<div className="flex items-start justify-between mb-10">
+	return (
+		<main className="min-h-screen bg-slate-50 dark:bg-slate-950 px-4 py-12">
+		<div className="max-w-5xl mx-auto space-y-8">
+
+			{/* Header — same pattern as login/verify pages */}
+			<div className="flex items-start justify-between">
 				<div>
-					<p className="text-sm font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-1">Admin Panel</p>
-					<h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Dashboard</h1>
+					<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-1">
+						Intelligence Monitor
+					</p>
+					<h1 className="text-3xl font-semibold text-slate-900 dark:text-slate-100">
+						Admin Panel
+					</h1>
 					<p className="text-base text-slate-500 dark:text-slate-400 mt-1">
 						Signed in as {session!.name} · {session!.email}
 					</p>
@@ -61,103 +69,115 @@ export default async function AdminPage() {
 			</div>
 
 			{/* Pipeline Stats */}
-			<h2 className="text-xs font-bold tracking-widest uppercase text-slate-500 dark:text-slate-400 mb-3">Pipeline Stats</h2>
-			<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-				{[
-					{ label: 'Briefings', value: totalBriefings, sub: `Last: ${lastRun}` },
-					{ label: 'Intel articles', value: totalArticles, sub: `${preservedArticles} preserved` },
-					{ label: "Today's feed", value: todayFeedCount, sub: today },
-					{ label: 'Email subs', value: emailSubCount, sub: 'subscribed users' },
-				].map(s => (
-					<div key={s.label} className={statCard}>
-						<p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{s.label}</p>
-						<p className="text-3xl font-bold text-slate-900 dark:text-slate-100">{s.value}</p>
-						<p className="text-xs text-slate-400 dark:text-slate-600 mt-1">{s.sub}</p>
-					</div>
-				))}
-			</div>
+			<section>
+				<p className="text-xs font-bold tracking-widest uppercase text-slate-500 dark:text-slate-400 mb-3">
+					Pipeline Stats
+				</p>
+				<div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+					{stats.map(s => (
+						<div key={s.label} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
+							<p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{s.label}</p>
+							<p className="text-3xl font-bold text-slate-900 dark:text-slate-100">{s.value}</p>
+							<p className="text-xs text-slate-400 dark:text-slate-600 mt-1 font-mono">{s.sub}</p>
+						</div>
+					))}
+				</div>
+			</section>
 
 			{/* Source breakdown */}
 			{sources.length > 0 && (
-				<div className={`${card} p-5 mb-8`}>
-					<h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4">Articles by source (all time)</h3>
+				<section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
+					<p className="text-xs font-bold tracking-widest uppercase text-slate-500 dark:text-slate-400 mb-4">
+						Articles by source · all time
+					</p>
 					<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
 						{sources.map(s => (
-							<div key={s.source} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2">
+							<div key={s.source} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-800">
 								<span className="text-sm font-medium text-slate-700 dark:text-slate-300">{s.source}</span>
-								<span className="text-sm font-bold text-slate-500 dark:text-slate-400">{s.cnt}</span>
+								<span className="text-sm font-bold text-slate-400 dark:text-slate-500 font-mono">{s.cnt}</span>
 							</div>
 						))}
 					</div>
-				</div>
+				</section>
 			)}
 
 			{/* Users */}
-			<h2 className="text-xs font-bold tracking-widest uppercase text-slate-500 dark:text-slate-400 mb-3">Users</h2>
-			<div className={`${card} mb-2 overflow-hidden`}>
-				<table className="w-full text-sm">
-					<thead>
-						<tr className="border-b border-slate-200 dark:border-slate-800">
-							{['Name', 'Email', 'Role', 'Email sub ⓘ', 'Joined', ''].map(h => (
+			<section>
+				<p className="text-xs font-bold tracking-widest uppercase text-slate-500 dark:text-slate-400 mb-3">
+					Users
+				</p>
+				<div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mb-2">
+					<table className="w-full text-sm">
+						<thead>
+							<tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+								<th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Name</th>
+								<th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Email</th>
+								<th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Role</th>
 								<th
-									key={h}
-									className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide"
-									title={h === 'Email sub ⓘ' ? 'Controlled by each user from their sidebar — admin cannot override.' : undefined}
+									className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide cursor-help"
+									title="Set by each user from their own sidebar — admin cannot override."
 								>
-									{h}
+									Email ⓘ
 								</th>
-							))}
-						</tr>
-					</thead>
-					<tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-						{allUsers.map(u => (
-							<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-								<td className="px-5 py-3.5 font-medium text-slate-900 dark:text-slate-100">{u.name}</td>
-								<td className="px-5 py-3.5 font-mono text-slate-600 dark:text-slate-400">{u.email}</td>
-								<td className="px-5 py-3.5">
-									<span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-										u.role === 'admin'
-											? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-											: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-									}`}>
-										{u.role}
-									</span>
-								</td>
-								<td className="px-5 py-3.5">
-									<span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-										u.emailNotifications
-											? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-											: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
-									}`}>
-										{u.emailNotifications ? 'on' : 'off'}
-									</span>
-								</td>
-								<td className="px-5 py-3.5 font-mono text-slate-500 dark:text-slate-400">
-									{u.createdAt ? u.createdAt.slice(0, 10) : '—'}
-								</td>
-								<td className="px-5 py-3.5">
-									{u.email !== session!.email && (
-										<form action={removeUser.bind(null, u.id)}>
-											<button type="submit" className="text-sm text-red-500 hover:text-red-700 dark:hover:text-red-400 hover:underline transition-colors">
-												Remove
-											</button>
-										</form>
-									)}
-								</td>
+								<th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Joined</th>
+								<th className="px-5 py-3" />
 							</tr>
-						))}
-					</tbody>
-				</table>
-			</div>
-			<p className="text-xs text-slate-400 dark:text-slate-600 mb-8">
-				ⓘ Email subscription is user-controlled. Each user toggles it from their own sidebar. Default for new users: on.
-			</p>
+						</thead>
+						<tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+							{allUsers.map(u => (
+								<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+									<td className="px-5 py-3.5 font-medium text-slate-900 dark:text-slate-100">{u.name}</td>
+									<td className="px-5 py-3.5 font-mono text-slate-600 dark:text-slate-400 text-xs">{u.email}</td>
+									<td className="px-5 py-3.5">
+										<span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${
+											u.role === 'admin'
+												? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+												: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+										}`}>
+											{u.role}
+										</span>
+									</td>
+									<td className="px-5 py-3.5">
+										<span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${
+											u.emailNotifications
+												? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+												: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
+										}`}>
+											{u.emailNotifications ? 'on' : 'off'}
+										</span>
+									</td>
+									<td className="px-5 py-3.5 font-mono text-xs text-slate-400 dark:text-slate-600">
+										{u.createdAt ? u.createdAt.slice(0, 10) : '—'}
+									</td>
+									<td className="px-5 py-3.5">
+										{u.email !== session!.email && (
+											<form action={removeUser.bind(null, u.id)}>
+												<button
+													type="submit"
+													className="text-xs font-medium text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:underline transition-colors"
+												>
+													Remove
+												</button>
+											</form>
+										)}
+									</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+				<p className="text-xs text-slate-400 dark:text-slate-600">
+					ⓘ Email is user-controlled — each user toggles from their own sidebar. Default for new users: on.
+				</p>
+			</section>
 
 			{/* Add user */}
-			<div className={`${card} p-6`}>
-				<h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-5">Add user</h2>
+			<section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
+				<p className="text-xs font-bold tracking-widest uppercase text-slate-500 dark:text-slate-400 mb-5">
+					Add user
+				</p>
 				<AddUserForm addUser={addUser} />
-			</div>
+			</section>
 
 		</div>
 		</main>
