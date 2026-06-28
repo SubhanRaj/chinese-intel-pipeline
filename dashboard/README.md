@@ -1,47 +1,54 @@
-# OpenNext Starter
+# Chinese Intel Pipeline — Dashboard
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Next.js 16 App Router dashboard deployed as a Cloudflare Worker via `@opennextjs/cloudflare`.
 
-## Getting Started
+## Stack
 
-Read the documentation at https://opennext.js.org/cloudflare.
+- **Framework:** Next.js 16 (App Router)
+- **Runtime:** Cloudflare Worker (`@opennextjs/cloudflare`)
+- **Database:** Cloudflare D1 via Drizzle ORM
+- **Styling:** Tailwind CSS v4 + Shadcn UI (main app) · DaisyUI v5 (admin panel only)
+- **Auth:** Custom magic-link passwordless auth (SubtleCrypto + D1 sessions)
+- **Email:** Resend (magic link delivery)
 
-## Develop
-
-Run the Next.js development server:
-
-```bash
-npm run dev
-# or similar package manager command
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-## Preview
-
-Preview the application locally on the Cloudflare runtime:
+## Commands
 
 ```bash
-npm run preview
-# or similar package manager command
+npm run dev        # Next.js dev server (local)
+npm run preview    # Build + run on local Cloudflare runtime
+npm run deploy     # Build + deploy to Cloudflare Workers
 ```
 
-## Deploy
+## Secrets (set via wrangler secret put)
 
-Deploy the application to Cloudflare:
+| Secret | Worker | Purpose |
+|---|---|---|
+| `SESSION_SECRET` | dashboard | HMAC key for signing session cookies |
+| `RESEND_API_KEY` | dashboard | Magic link email delivery |
+| `RESEND_FROM_EMAIL` | dashboard | Sender address (`onboarding@resend.dev`) |
 
-```bash
-npm run deploy
-# or similar package manager command
+## Key files
+
+```
+src/app/page.tsx              Server component — reads D1, passes data to IntelViewer
+src/app/actions.ts            Server actions: preserve/delete/logout/setEmailEnabled
+src/app/layout.tsx            Fonts, dark-mode inline script (no FOUC)
+src/app/globals.css           Tailwind v4 + Shadcn CSS tokens
+src/app/login/                Magic-link request page
+src/app/auth/verify/          Magic-link verify page (sets session cookie)
+src/app/admin/                User management panel (DaisyUI corporate theme)
+src/components/IntelViewer.tsx  All client UI (sidebar, briefing, feed, search)
+src/lib/auth.ts               getSession, requireAuth, createSession, deleteSession
+src/db/schema.ts              Drizzle schema (all tables incl. auth)
 ```
 
-## Learn More
+## Auth flow
 
-To learn more about Next.js, take a look at the following resources:
+1. User visits `/login`, enters email
+2. Server calls Resend → delivers magic link to inbox
+3. User clicks link → `/auth/verify?token=<uuid>`
+4. Token verified (single-use, 15-min expiry, hash stored in D1)
+5. Session cookie set (admin: ephemeral; user: 1-year persistent)
+6. Redirected to `/`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Anonymous users can read all briefings. Authenticated users can preserve articles. Admin can delete and manage users at `/admin`.

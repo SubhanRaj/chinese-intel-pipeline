@@ -254,8 +254,8 @@ Sidebar search. Enter/Search commits query and opens a results page across all d
 
 ### Sidebar controls
 - **Dark/light mode toggle** — persisted in `localStorage` (no flash on refresh — inline script in `<head>` applies dark class before first paint). Available to all users including anonymous.
-- **Sign in / Sign out** — login link for anonymous users; user name + logout button for authenticated users (planned).
-- **Daily email toggle** — visible only when signed in; toggles your own email notification preference stored per-user in D1 (planned). Currently: global toggle in `settings` table visible to all.
+- **Auth footer** — anonymous users see a Sign in button; signed-in users see their name, role, an Admin link (admin only), and Sign out. Logout redirects to briefing home.
+- **Daily email toggle** — global on/off switch; writes to D1 `settings` table. Post-auth: each user has an individual `email_notifications` flag.
 - **GitHub link** — links to repository from sidebar footer
 
 ---
@@ -264,12 +264,12 @@ Sidebar search. Enter/Search commits query and opens a results page across all d
 
 Daily briefings via **Resend**. Table-based HTML template (inline CSS — required for Gmail). One row per cluster.
 
-**Current behaviour:** Global on/off toggle in the dashboard sidebar. State persisted in D1 `settings` table (`email_enabled` key). Sent to a single `RESEND_TO_EMAIL` secret.
+**Current behaviour:** Global on/off toggle in the dashboard sidebar. State persisted in D1 `settings` table (`email_enabled` key). Sent to a single `RESEND_TO_EMAIL` secret on the scraper worker.
 
-**Planned (post-auth migration):** Each user in the `users` table has an `email_notifications` flag. Scraper queries D1 for all enabled users and sends individually. `RESEND_TO_EMAIL` secret deprecated. OTP login emails for the dashboard also routed via Resend.
+**Post-auth (next step):** Each user in the `users` table has an `email_notifications` flag. Scraper will query D1 for all enabled users and send individually. `RESEND_TO_EMAIL` secret deprecated once users are seeded.
 
-**Secrets required on scraper worker** (set via `npx wrangler secret put`): `RESEND_API_KEY`, `RESEND_TO_EMAIL` (deprecated post-migration), `RESEND_FROM_EMAIL`.
-**Secrets required on dashboard worker** (planned): `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `SESSION_SECRET`.
+**Secrets on scraper worker:** `RESEND_API_KEY` ✓, `RESEND_TO_EMAIL` ✓, `RESEND_FROM_EMAIL` ✓
+**Secrets on dashboard worker:** `RESEND_API_KEY` ✓, `RESEND_FROM_EMAIL` ✓ (`onboarding@resend.dev`), `SESSION_SECRET` ✓ — dashboard magic-link emails use same Resend key.
 
 ---
 
@@ -355,7 +355,7 @@ Daily briefings via **Resend**. Table-based HTML template (inline CSS — requir
 
 Current keys: `email_enabled` (`'0'` = off, `'1'` = on). Toggled from dashboard UI (global; deprecated post-auth migration).
 
-### `users` — registered accounts (migration 0009 — planned)
+### `users` — registered accounts (migration 0009 — deployed)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -366,7 +366,7 @@ Current keys: `email_enabled` (`'0'` = off, `'1'` = on). Toggled from dashboard 
 | `email_notifications` | INTEGER | `0` = off, `1` = on |
 | `created_at` | DATETIME | auto |
 
-### `auth_magic_links` — one-time login tokens (migration 0009 — planned)
+### `auth_magic_links` — one-time login tokens (migration 0009 — deployed)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -377,7 +377,7 @@ Current keys: `email_enabled` (`'0'` = off, `'1'` = on). Toggled from dashboard 
 | `used` | INTEGER | `1` after first verification |
 | `created_at` | DATETIME | auto |
 
-### `auth_sessions` — active login sessions (migration 0009 — planned)
+### `auth_sessions` — active login sessions (migration 0009 — deployed)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -391,28 +391,31 @@ Current keys: `email_enabled` (`'0'` = off, `'1'` = on). Toggled from dashboard 
 
 ## Security & Auth
 
-### Access tiers (planned — migration 0009)
+### Access tiers (live — migration 0009 deployed)
 
 | Tier | Login | Session | Capabilities |
 |---|---|---|---|
 | **Anonymous** | None | — | View briefings, feed, archive; toggle dark mode |
-| **User** | Magic link (email) | Persistent cookie (until logout) | + preserve articles; toggle own email notifications |
-| **Admin** | Magic link + optional TOTP | Session cookie (clears on browser/tab close) | + delete articles/clusters; manage users via `/admin` panel |
+| **User** | Magic link (email) | Persistent cookie (1 year) | + preserve articles; toggle own email notifications |
+| **Admin** | Magic link | Session cookie (clears on browser/tab close) | + delete articles/clusters; manage users via `/admin` panel |
 
-**Magic link flow (passwordless):** Enter email → server checks `users` table → if registered, Resend delivers a one-time login URL (15-min expiry, single-use, token hash stored in D1). Click link → for admin, optional TOTP challenge → session cookie set.
+**Magic link flow (passwordless):** Enter email on `/login` → server checks `users` table → Resend delivers a one-time login URL (15-min expiry, single-use, token hash stored in D1) → click link → session cookie set → redirect to `/`.
 
-**TOTP (admin only, optional):** Implemented with SubtleCrypto (HMAC-SHA1, RFC 6238). Compatible with any TOTP authenticator app. Set up via the admin panel — no third-party auth service.
+**Admin panel (`/admin`):** List/add/remove users, toggle email notifications per user, change roles. Built with DaisyUI v5 (npm, scoped to `/admin` only — does not affect main app styles).
 
-**Scraper protection (planned):** HTTP trigger requires `Authorization: Bearer <SCRAPER_SECRET>`. Cron trigger bypasses (internal, already protected by CF scheduler).
+**Scraper protection (not yet enabled):** HTTP trigger will require `Authorization: Bearer <SCRAPER_SECRET>`. Cron trigger is already protected by CF scheduler. `SCRAPER_SECRET` secret not yet set.
 
-### Current protections (pre-auth)
+### Protections
 
 | Surface | Protection |
 |---|---|
+| Server Actions | All mutations call `requireAuth('user')` or `requireAuth('admin')` before executing |
 | Server Actions | Input validated server-side; `deleteArticle` re-checks `is_preserved = 0`; batch cluster actions validate every ID |
+| Session cookies | HMAC-SHA256 signed; session ID stored as SHA-256 hash in D1 — plaintext never persisted |
+| Magic link tokens | SHA-256 hash stored in D1; plaintext only exists in the emailed URL |
 | URL rendering | All `href` values pass through `safeUrl()` — only `http://` and `https://` allowed |
 | Content rendering | Article text rendered as React text nodes, never `dangerouslySetInnerHTML` |
-| Secrets | `RESEND_API_KEY`, `RESEND_TO_EMAIL`, `RESEND_FROM_EMAIL` stored as Wrangler secrets — never in source or git |
+| Secrets | All Wrangler secrets — never in source or git |
 
 No third-party auth service (Clerk, Auth0, etc.) — auth is custom-built on CF primitives + SubtleCrypto.
 
@@ -431,7 +434,8 @@ chinese-intel-pipeline/
 │   │   ├── 0005_add_clusters.sql
 │   │   ├── 0006_temp_articles_cluster_id.sql
 │   │   ├── 0007_add_url_to_temp_articles.sql
-│   │   └── 0008_add_settings.sql
+│   │   ├── 0008_add_settings.sql
+│   │   └── 0009_add_auth.sql            users, auth_magic_links, auth_sessions
 │   ├── src/
 │   │   ├── index.ts                     # All pipeline logic
 │   │   │   ├── fetchHtml()              fetch wrapper with UA + Referer headers
@@ -456,22 +460,23 @@ chinese-intel-pipeline/
     │   └── favicon.svg
     ├── src/
     │   ├── app/
-    │   │   ├── actions.ts               Server Actions: preserve/delete article & cluster; setEmailEnabled
+    │   │   ├── actions.ts               Server actions: preserve/delete/logout; setEmailEnabled
     │   │   ├── layout.tsx               Metadata, fonts, inline dark-mode script (beforeInteractive — no FOUC)
-    │   │   ├── page.tsx                 Server component — queries all tables + active session (planned)
-    │   │   ├── globals.css              Tailwind v4 + Shadcn tokens
-    │   │   ├── login/                   (planned) Magic-link request page + requestMagicLink server action
-    │   │   ├── auth/verify/             (planned) Magic-link landing page; TOTP challenge for admin
-    │   │   └── admin/                   (planned) User mgmt panel: list/add/remove users, set roles, toggle email notifications per user, change receiver email, global email kill-switch
+    │   │   ├── page.tsx                 Server component — queries all tables + active session
+    │   │   ├── globals.css              Tailwind v4 + Shadcn CSS tokens
+    │   │   ├── login/                   Magic-link request page + requestMagicLink server action
+    │   │   ├── auth/verify/             Magic-link landing page; consumeToken → session cookie
+    │   │   └── admin/                   User mgmt panel (DaisyUI corporate theme, npm-scoped)
+    │   │                                list/add/remove users; roles; email notification toggles
     │   ├── components/
-    │   │   ├── IntelViewer.tsx          Client: sidebar (dark toggle, email toggle, GitHub link),
-    │   │   │                                    Today's Feed (collapsible by source, collapsed by default),
+    │   │   ├── IntelViewer.tsx          Client: sidebar (dark toggle, email toggle, auth footer, GitHub),
+    │   │   │                                    Today's Feed (collapsible by source),
     │   │   │                                    Intel Briefing, ClusterCard, ClusterDrawer, search
     │   │   ├── MarkdownRenderer.tsx     Legacy briefings (react-markdown, ssr:false)
     │   │   └── ui/                      Shadcn primitives
     │   ├── lib/
-    │   │   └── auth.ts                  (planned) getSession, requireAuth, createSession, magic-link helpers
-    │   └── db/schema.ts                 Drizzle ORM (mirrors scraper-worker; auth tables added in 0009)
+    │   │   └── auth.ts                  getSession, requireAuth, createSession, deleteSession
+    │   └── db/schema.ts                 Drizzle ORM (all tables incl. users, auth_magic_links, auth_sessions)
     └── wrangler.jsonc                   Worker-mode deploy
 ```
 
@@ -496,16 +501,16 @@ npx wrangler d1 migrations apply intel_briefings_db --remote
 ```bash
 # Scraper worker
 cd scraper-worker
-npx wrangler secret put RESEND_API_KEY
-npx wrangler secret put RESEND_TO_EMAIL      # deprecated post-auth migration
-npx wrangler secret put RESEND_FROM_EMAIL
-npx wrangler secret put SCRAPER_SECRET       # planned — protects HTTP trigger
+npx wrangler secret put RESEND_API_KEY       # ✓ set
+npx wrangler secret put RESEND_TO_EMAIL      # ✓ set (deprecated once per-user email is live)
+npx wrangler secret put RESEND_FROM_EMAIL    # ✓ set
+npx wrangler secret put SCRAPER_SECRET       # not yet set — will protect HTTP GET trigger
 
-# Dashboard worker (planned — needed once auth migration deployed)
+# Dashboard worker
 cd ../dashboard
-npx wrangler secret put SESSION_SECRET
-npx wrangler secret put RESEND_API_KEY
-npx wrangler secret put RESEND_FROM_EMAIL
+npx wrangler secret put SESSION_SECRET       # ✓ set
+npx wrangler secret put RESEND_API_KEY       # ✓ set (same key as scraper — for magic link emails)
+npx wrangler secret put RESEND_FROM_EMAIL    # ✓ set (onboarding@resend.dev)
 ```
 
 Email is **off by default**. Toggle it on via the dashboard UI (sidebar email switch). The switch writes to D1 — no Worker redeploy needed.
@@ -554,6 +559,6 @@ If today's data already exists, the pipeline skips and returns a message. To for
 | Database | Cloudflare D1 (SQLite) via Drizzle ORM |
 | Email | Resend API — table-layout HTML template (mobile Gmail compatible) |
 | Dashboard | Next.js 16 App Router via `@opennextjs/cloudflare` |
-| Styling | Tailwind CSS v4 + Shadcn UI |
+| Styling | Tailwind CSS v4 + Shadcn UI (main app) · DaisyUI v5 via npm (admin panel) |
 | Fonts | DM Serif Display + Inter + Geist Mono via `next/font/google` |
 | Icons | Tabler Icons |
