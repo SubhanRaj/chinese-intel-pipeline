@@ -5,6 +5,7 @@ import {
 	IconAdjustments,
 	IconX,
 	IconRotate,
+	IconLoader2,
 } from '@tabler/icons-react';
 
 // ── Font catalogue ────────────────────────────────────────────────────────────
@@ -14,20 +15,22 @@ interface FontOption {
 	label: string;
 	category: 'Sans' | 'Serif' | 'Slab' | 'Mono';
 	cssFamily: string;
+	/** Exact family name passed to document.fonts.load(). null = already available (var/system). */
+	familyName: string | null;
 	googleUrl: string | null;
 }
 
 const FONTS: FontOption[] = [
-	{ id: 'inter',        label: 'Inter',          category: 'Sans',  cssFamily: 'var(--font-inter)',                       googleUrl: null },
-	{ id: 'space-grotesk',label: 'Space Grotesk',  category: 'Sans',  cssFamily: "'Space Grotesk', sans-serif",             googleUrl: 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap' },
-	{ id: 'dm-serif',     label: 'DM Serif',        category: 'Serif', cssFamily: 'var(--font-dm-serif)',                    googleUrl: null },
-	{ id: 'lora',         label: 'Lora',            category: 'Serif', cssFamily: "'Lora', Georgia, serif",                  googleUrl: 'https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&display=swap' },
-	{ id: 'merriweather', label: 'Merriweather',    category: 'Serif', cssFamily: "'Merriweather', Georgia, serif",          googleUrl: 'https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&display=swap' },
-	{ id: 'playfair',     label: 'Playfair',        category: 'Serif', cssFamily: "'Playfair Display', Georgia, serif",      googleUrl: 'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap' },
-	{ id: 'crimson',      label: 'Crimson',         category: 'Serif', cssFamily: "'Crimson Text', Georgia, serif",          googleUrl: 'https://fonts.googleapis.com/css2?family=Crimson+Text:wght@400;600&display=swap' },
-	{ id: 'bitter',       label: 'Bitter',          category: 'Slab',  cssFamily: "'Bitter', Georgia, serif",                googleUrl: 'https://fonts.googleapis.com/css2?family=Bitter:wght@400;700&display=swap' },
-	{ id: 'geist-mono',   label: 'Geist Mono',      category: 'Mono',  cssFamily: 'var(--font-geist-mono)',                  googleUrl: null },
-	{ id: 'jetbrains',    label: 'JetBrains',       category: 'Mono',  cssFamily: "'JetBrains Mono', monospace",             googleUrl: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap' },
+	{ id: 'inter',        label: 'Inter',          category: 'Sans',  cssFamily: 'var(--font-inter)',                  familyName: null,              googleUrl: null },
+	{ id: 'space-grotesk',label: 'Space Grotesk',  category: 'Sans',  cssFamily: "'Space Grotesk', sans-serif",        familyName: 'Space Grotesk',   googleUrl: 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap' },
+	{ id: 'dm-serif',     label: 'DM Serif',        category: 'Serif', cssFamily: 'var(--font-dm-serif)',               familyName: null,              googleUrl: null },
+	{ id: 'lora',         label: 'Lora',            category: 'Serif', cssFamily: "'Lora', Georgia, serif",             familyName: 'Lora',            googleUrl: 'https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&display=swap' },
+	{ id: 'merriweather', label: 'Merriweather',    category: 'Serif', cssFamily: "'Merriweather', Georgia, serif",     familyName: 'Merriweather',    googleUrl: 'https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&display=swap' },
+	{ id: 'playfair',     label: 'Playfair',        category: 'Serif', cssFamily: "'Playfair Display', Georgia, serif", familyName: 'Playfair Display', googleUrl: 'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap' },
+	{ id: 'crimson',      label: 'Crimson',         category: 'Serif', cssFamily: "'Crimson Text', Georgia, serif",     familyName: 'Crimson Text',    googleUrl: 'https://fonts.googleapis.com/css2?family=Crimson+Text:wght@400;600&display=swap' },
+	{ id: 'bitter',       label: 'Bitter',          category: 'Slab',  cssFamily: "'Bitter', Georgia, serif",           familyName: 'Bitter',          googleUrl: 'https://fonts.googleapis.com/css2?family=Bitter:wght@400;700&display=swap' },
+	{ id: 'geist-mono',   label: 'Geist Mono',      category: 'Mono',  cssFamily: 'var(--font-geist-mono)',             familyName: null,              googleUrl: null },
+	{ id: 'jetbrains',    label: 'JetBrains',       category: 'Mono',  cssFamily: "'JetBrains Mono', monospace",        familyName: 'JetBrains Mono',  googleUrl: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap' },
 ];
 
 // ── Preference shape ──────────────────────────────────────────────────────────
@@ -108,40 +111,49 @@ function applyPrefs(p: Prefs, font: FontOption) {
 	if (p.accent === 'red') r.removeAttribute('data-accent'); else r.setAttribute('data-accent', p.accent);
 }
 
-const loadedFontUrls = new Set<string>();
+// Tracks link tags we've already injected (avoids double-inject)
+const injectedUrls = new Set<string>();
+// Tracks fonts confirmed usable via document.fonts.load() — skip loading state for these
+const readyUrls = new Set<string>();
 
-async function loadGoogleFont(url: string): Promise<void> {
-	if (loadedFontUrls.has(url)) return;
-	loadedFontUrls.add(url);
+/**
+ * Injects a Google Fonts stylesheet and waits until the font is actually
+ * available (document.fonts.load resolves). Caches CSS + binaries in the
+ * background via the Cache API for offline / PWA use.
+ *
+ * Returns immediately if the font is already ready.
+ */
+async function loadGoogleFont(url: string, familyName: string): Promise<void> {
+	if (readyUrls.has(url)) return;
 
-	// Inject stylesheet link
-	const link = document.createElement('link');
-	link.rel = 'stylesheet';
-	link.href = url;
-	link.crossOrigin = 'anonymous';
-	document.head.appendChild(link);
+	if (!injectedUrls.has(url)) {
+		injectedUrls.add(url);
+		const link = document.createElement('link');
+		link.rel = 'stylesheet';
+		link.href = url;
+		link.crossOrigin = 'anonymous';
+		document.head.appendChild(link);
+	}
 
-	// Pre-cache the font CSS + binary files for offline / PWA use
-	if (typeof caches === 'undefined') return;
-	try {
-		const cache = await caches.open('reading-fonts-v1');
-		const existing = await cache.match(url);
-		if (existing) return;
+	// Block until the font is actually usable by the browser
+	await document.fonts.load(`400 16px "${familyName}"`);
+	readyUrls.add(url);
 
-		const cssResp = await fetch(url);
-		const cssText = await cssResp.text();
-		await cache.put(url, new Response(cssText, { headers: { 'Content-Type': 'text/css' } }));
-
-		// Parse and cache individual .woff2 / .woff files
-		const fontUrls = [...cssText.matchAll(/url\(([^)'"]+)/g)].map(m => m[1]);
-		await Promise.allSettled(fontUrls.map(async (fontUrl) => {
-			const hit = await cache.match(fontUrl);
-			if (!hit) {
-				const fontResp = await fetch(fontUrl);
-				await cache.put(fontUrl, fontResp);
-			}
-		}));
-	} catch { /* caches API unavailable or quota exceeded */ }
+	// Cache CSS + binary font files in the background (don't block the caller)
+	if (typeof caches !== 'undefined') {
+		caches.open('reading-fonts-v1').then(async (cache) => {
+			const existing = await cache.match(url);
+			if (existing) return;
+			const cssResp  = await fetch(url);
+			const cssText  = await cssResp.text();
+			await cache.put(url, new Response(cssText, { headers: { 'Content-Type': 'text/css' } }));
+			const fontUrls = [...cssText.matchAll(/url\(([^)'"]+)/g)].map(m => m[1]);
+			await Promise.allSettled(fontUrls.map(async (fu) => {
+				const hit = await cache.match(fu);
+				if (!hit) await cache.put(fu, await fetch(fu));
+			}));
+		}).catch(() => { /* quota / network error — non-fatal */ });
+	}
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -154,9 +166,10 @@ interface Props {
 }
 
 export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, onEmailToggle }: Props) {
-	const [open, setOpen]   = useState(false);
-	const [prefs, setPrefs] = useState<Prefs>(DEFAULTS);
-	const [ready, setReady] = useState(false);
+	const [open, setOpen]             = useState(false);
+	const [prefs, setPrefs]           = useState<Prefs>(DEFAULTS);
+	const [ready, setReady]           = useState(false);
+	const [loadingFontId, setLoadingFontId] = useState<string | null>(null);
 
 	// Bootstrap from localStorage, apply immediately
 	useEffect(() => {
@@ -164,7 +177,8 @@ export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, on
 		setPrefs(p);
 		const font = FONTS.find(f => f.id === p.fontId) ?? FONTS[0];
 		applyPrefs(p, font);
-		if (font.googleUrl) loadGoogleFont(font.googleUrl);
+		// Silently pre-load the saved font in the background (no loading indicator on mount)
+		if (font.googleUrl && font.familyName) loadGoogleFont(font.googleUrl, font.familyName).catch(() => {});
 		setReady(true);
 	}, []);
 
@@ -188,13 +202,33 @@ export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, on
 			const next = { ...prev, ...patch };
 			const font = FONTS.find(f => f.id === next.fontId) ?? FONTS[0];
 			applyPrefs(next, font);
-			if (font.googleUrl) loadGoogleFont(font.googleUrl);
 			savePrefs(next);
 			return next;
 		});
 	}, []);
 
-	const reset = useCallback(() => update(DEFAULTS), [update]);
+	// Async font selector: shows a spinner and blocks other clicks while loading
+	const handleFontSelect = useCallback(async (font: FontOption) => {
+		if (loadingFontId !== null) return; // another font is loading — block
+
+		// No network needed (already bundled or already confirmed ready)
+		if (!font.googleUrl || !font.familyName || readyUrls.has(font.googleUrl)) {
+			update({ fontId: font.id });
+			return;
+		}
+
+		setLoadingFontId(font.id);
+		try {
+			await loadGoogleFont(font.googleUrl, font.familyName);
+		} catch { /* network failed — fall through; browser will use CSS fallback */ }
+		setLoadingFontId(null);
+		update({ fontId: font.id });
+	}, [loadingFontId, update]);
+
+	const reset = useCallback(() => {
+		if (loadingFontId !== null) return;
+		update(DEFAULTS);
+	}, [loadingFontId, update]);
 
 	if (!ready) return null;
 
@@ -247,23 +281,37 @@ export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, on
 							</p>
 							<div className="grid grid-cols-2 gap-1">
 								{FONTS.map(font => {
-									const active = prefs.fontId === font.id;
+									const active    = prefs.fontId === font.id;
+									const isLoading = loadingFontId === font.id;
+									const dimmed    = loadingFontId !== null && !isLoading;
 									return (
 										<button
 											key={font.id}
-											onClick={() => update({ fontId: font.id })}
+											onClick={() => handleFontSelect(font)}
+											disabled={dimmed}
 											style={{ fontFamily: font.cssFamily }}
 											className={[
-												'flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-colors text-sm leading-none',
-												active
+												'flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-sm leading-none',
+												isLoading || active
 													? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900'
-													: 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300',
+													: dimmed
+														? 'opacity-30 cursor-not-allowed text-slate-600 dark:text-slate-400'
+														: 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors',
 											].join(' ')}
 										>
-											<span className="truncate">{font.label}</span>
-											<span className={['text-[9px] shrink-0 ml-1 font-mono', active ? 'opacity-60' : 'opacity-40'].join(' ')}>
-												{font.category}
-											</span>
+											{isLoading ? (
+												<>
+													<span className="truncate opacity-80">{font.label}</span>
+													<IconLoader2 size={12} className="shrink-0 ml-1 animate-spin" />
+												</>
+											) : (
+												<>
+													<span className="truncate">{font.label}</span>
+													<span className={['text-[9px] shrink-0 ml-1 font-mono', active ? 'opacity-60' : 'opacity-40'].join(' ')}>
+														{font.category}
+													</span>
+												</>
+											)}
 										</button>
 									);
 								})}
