@@ -255,7 +255,7 @@ Sidebar search. Enter/Search commits query and opens a results page across all d
 ### Sidebar controls
 - **Dark/light mode toggle** — persisted in `localStorage` (no flash on refresh — inline script in `<head>` applies dark class before first paint). Available to all users including anonymous.
 - **Auth footer** — anonymous users see a Sign in button; signed-in users see their name, role, an Admin link (admin only), and Sign out. Logout redirects to briefing home.
-- **Daily email toggle** — global on/off switch; writes to D1 `settings` table. Post-auth: each user has an individual `email_notifications` flag.
+- **Daily email toggle** — per-user on/off, visible to any signed-in user. Updates `users.email_notifications` for the current user. Admin cannot override a user's preference.
 - **GitHub link** — links to repository from sidebar footer
 
 ---
@@ -264,12 +264,10 @@ Sidebar search. Enter/Search commits query and opens a results page across all d
 
 Daily briefings via **Resend**. Table-based HTML template (inline CSS — required for Gmail). One row per cluster.
 
-**Current behaviour:** Global on/off toggle in the dashboard sidebar. State persisted in D1 `settings` table (`email_enabled` key). Sent to a single `RESEND_TO_EMAIL` secret on the scraper worker.
+**Current behaviour:** Per-user subscription. Scraper queries `users WHERE email_notifications = 1` and sends the briefing to each address. Users toggle their own subscription from the dashboard sidebar (`setMyEmailEnabled` server action). Admin can see subscription status in `/admin` but cannot override a user's choice — only sets the default (on) at account creation. `settings.email_enabled` and `RESEND_TO_EMAIL` are no longer used.
 
-**Post-auth (next step):** Each user in the `users` table has an `email_notifications` flag. Scraper will query D1 for all enabled users and send individually. `RESEND_TO_EMAIL` secret deprecated once users are seeded.
-
-**Secrets on scraper worker:** `RESEND_API_KEY` ✓, `RESEND_TO_EMAIL` ✓, `RESEND_FROM_EMAIL` ✓
-**Secrets on dashboard worker:** `RESEND_API_KEY` ✓, `RESEND_FROM_EMAIL` ✓ (`onboarding@resend.dev`), `SESSION_SECRET` ✓ — dashboard magic-link emails use same Resend key.
+**Secrets on scraper worker:** `RESEND_API_KEY` ✓, `RESEND_FROM_EMAIL` ✓ (`RESEND_TO_EMAIL` deprecated — not used)
+**Secrets on dashboard worker:** `RESEND_API_KEY` ✓, `RESEND_FROM_EMAIL` ✓ (`onboarding@resend.dev`), `SESSION_SECRET` ✓
 
 ---
 
@@ -401,7 +399,7 @@ Current keys: `email_enabled` (`'0'` = off, `'1'` = on). Toggled from dashboard 
 
 **Magic link flow (passwordless):** Enter email on `/login` → server checks `users` table → Resend delivers a one-time login URL (15-min expiry, single-use, token hash stored in D1) → click link → session cookie set → redirect to `/`.
 
-**Admin panel (`/admin`):** List/add/remove users, toggle email notifications per user, change roles. Built with DaisyUI v5 (npm, scoped to `/admin` only — does not affect main app styles).
+**Admin panel (`/admin`):** Pipeline stats (briefings, articles, email sub count), source breakdown, user list with read-only email sub status (users control their own), add/remove users, dark/light theme toggle. Built with DaisyUI v5 (npm, `corporate` theme, scoped to `/admin` only).
 
 **Scraper protection (not yet enabled):** HTTP trigger will require `Authorization: Bearer <SCRAPER_SECRET>`. Cron trigger is already protected by CF scheduler. `SCRAPER_SECRET` secret not yet set.
 
@@ -502,8 +500,8 @@ npx wrangler d1 migrations apply intel_briefings_db --remote
 # Scraper worker
 cd scraper-worker
 npx wrangler secret put RESEND_API_KEY       # ✓ set
-npx wrangler secret put RESEND_TO_EMAIL      # ✓ set (deprecated once per-user email is live)
 npx wrangler secret put RESEND_FROM_EMAIL    # ✓ set
+# RESEND_TO_EMAIL — no longer used; scraper reads recipients from D1 users table
 npx wrangler secret put SCRAPER_SECRET       # not yet set — will protect HTTP GET trigger
 
 # Dashboard worker

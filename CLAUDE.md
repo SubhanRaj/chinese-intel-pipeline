@@ -62,14 +62,14 @@ Both passes use `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Never downgrade to a
 | `temp_articles` | All scraped articles (important + not), 24h feed | Cleared after next successful AI Pass 1 |
 | `intel_clusters` + `intel_articles` | Important articles, fully analysed and clustered | 30 days → auto-cleanup |
 | `intel_articles` where `is_preserved=1` | Hand-preserved articles | Permanent |
-| `settings` | Pipeline config (global email kill-switch) | Persistent key-value store |
+| `settings` | Legacy pipeline config (no longer used for email) | Persistent key-value store |
+| `users` | Known accounts with per-user email preference | Permanent |
+| `auth_magic_links` | One-time login tokens | Auto-expired (15 min) |
+| `auth_sessions` | Active sessions | Until logout or cookie expiry |
 
 **URLs are stored for ALL articles** including non-important ones in `temp_articles.url`. The dashboard shows a ↗ source link on every card.
 
-**`settings` table keys:**
-- `email_enabled`: `'0'` = off (default), `'1'` = on. Global kill-switch, toggled from dashboard.
-
-**Auth tables (migration 0009 — planned, not yet deployed):**
+**Auth tables (migration 0009 — deployed):**
 
 | Table | Content |
 |---|---|
@@ -85,7 +85,7 @@ scraper-worker/wrangler.jsonc     — bindings (D1, AI), cron 30 1 * * * (no BRO
 scraper-worker/migrations/        — D1 schema migrations 0001–0009 (0009 auth — deployed)
 dashboard/src/app/page.tsx        — server component, queries all tables + session
 dashboard/src/components/IntelViewer.tsx — all client UI (sidebar, feed, briefing, email toggle, auth footer)
-dashboard/src/app/actions.ts      — server actions (preserve/delete article & cluster; setEmailEnabled; logout)
+dashboard/src/app/actions.ts      — server actions (preserve/delete article & cluster; setMyEmailEnabled; logout)
 dashboard/src/app/layout.tsx      — inline dark-mode script in <head> (beforeInteractive — no FOUC)
 dashboard/src/db/schema.ts        — Drizzle ORM schema (all tables)
 dashboard/src/lib/auth.ts         — session helpers: getSession, requireAuth, createSession, deleteSession
@@ -101,9 +101,10 @@ dashboard/src/app/admin/          — user management panel (admin role only); u
 - **Archive (Preserved)** — bookmarked articles, exempt from 30-day cleanup.
 - **Search** — sidebar search across all dates.
 - **Dark mode** — persisted in `localStorage`. Inline `<Script strategy="beforeInteractive">` in layout.tsx adds `dark` class to `<html>` before first paint — no flash on refresh.
-- **Email toggle** — on/off switch in sidebar. Writes to D1 `settings` table. Email address stays in CF secrets.
+- **Email toggle** — per-user on/off switch in sidebar, visible to any signed-in user. Updates `users.email_notifications` for the current user only. Admin cannot override a user's choice; only sets the default (`1`) when adding a new account. Scraper sends to all users with `email_notifications = 1`.
 - **GitHub link** — sidebar footer.
 - **Auth footer** — bottom of sidebar shows signed-in user (name + role) with Admin and Sign out links; anonymous users see a Sign in button. Logout redirects to `/` (briefing home).
+- **Admin panel** — pipeline stats (briefings, articles, today's feed, email sub count), source breakdown, user table with read-only email sub status, add/remove users. Dark/light/system theme toggle in header uses same `localStorage` key as main app.
 
 ## Auth & Security (migration 0009 — deployed)
 
@@ -137,19 +138,22 @@ dashboard/src/app/admin/          — user management panel (admin role only); u
 
 ### Secrets status
 - Dashboard worker: `SESSION_SECRET` ✓, `RESEND_API_KEY` ✓, `RESEND_FROM_EMAIL` ✓ (`onboarding@resend.dev`)
-- Scraper worker: `RESEND_API_KEY` ✓, `RESEND_TO_EMAIL` ✓, `RESEND_FROM_EMAIL` ✓ — `SCRAPER_SECRET` not yet set (GET trigger is unprotected)
+- Scraper worker: `RESEND_API_KEY` ✓, `RESEND_FROM_EMAIL` ✓ — `RESEND_TO_EMAIL` no longer used; `SCRAPER_SECRET` not yet set (GET trigger is unprotected)
 
-### Email subscriptions (post-auth)
-- Currently: global `settings.email_enabled` toggle, single `RESEND_TO_EMAIL` recipient
-- After auth: scraper queries `users WHERE email_notifications = 1`, sends to each address
-- `RESEND_TO_EMAIL` secret deprecated once migration is deployed and users are seeded
+### Email subscriptions (live)
+- Scraper queries `users WHERE email_notifications = 1` and sends briefing to all matching email addresses
+- `settings.email_enabled` and `RESEND_TO_EMAIL` are no longer used — fully per-user now
+- Users control their own subscription from the sidebar toggle (`setMyEmailEnabled` server action)
+- Admin can see subscription status in `/admin` but cannot override a user's preference
+- Default for new users: `email_notifications = 1` (subscribed)
 
 ### Admin panel capabilities (live at `/admin`)
-- List all users (name, email, role, email notification toggle)
-- Add new user: set name, email, role
-- Remove user (cannot remove self)
-- Toggle any user's email notifications on/off
-- Global email kill-switch (`settings.email_enabled` toggle in sidebar)
+- Pipeline stats: briefing count, intel article count, today's feed count, email sub count
+- Source breakdown: articles scraped per newspaper (all time)
+- List all users (name, email, role, email sub status — read-only)
+- Add new user: set name, email, role (email sub defaults to on)
+- Remove user (cannot remove self; cannot remove sole admin)
+- Dark/light/system theme toggle — same `localStorage` key as main app
 - UI uses DaisyUI v5 (npm, `corporate` theme) scoped to `/admin` via `admin.css` — does not affect main app styles
 
 ### Future (not in current scope)
@@ -173,6 +177,9 @@ dashboard/src/app/admin/          — user management panel (admin role only); u
 - Don't set `Max-Age` on admin session cookies — admin sessions must be ephemeral (clear on browser close).
 - Don't load DaisyUI globally — it's scoped to `/admin` via `dashboard/src/app/admin/admin.css` to avoid style conflicts with the main app (which uses shadcn/Tailwind).
 - Don't use the DaisyUI CDN link — DaisyUI is installed via npm (`daisyui` package) and imported as a Tailwind v4 `@plugin`.
+- Don't add back a global `settings.email_enabled` kill-switch — email is now fully per-user via `users.email_notifications`. The `settings` table is kept but no longer used for email.
+- Don't allow admin to toggle another user's `email_notifications` — only the user themselves can change their own subscription (enforced in `setMyEmailEnabled` via `requireAuth` + session user ID).
+- Don't use `RESEND_TO_EMAIL` — scraper reads recipient list directly from D1 `users` table.
 
 ## Deploy commands
 

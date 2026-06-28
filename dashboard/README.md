@@ -51,4 +51,4 @@ src/db/schema.ts              Drizzle schema (all tables incl. auth)
 5. Session cookie set (admin: ephemeral; user: 1-year persistent)
 6. Redirected to `/`
 
-Anonymous users can read all briefings. Authenticated users can preserve articles. Admin can delete and manage users at `/admin`.
+Anonymous users can read all briefings. Authenticated users can preserve articles and toggle their own daily email subscription. Admin can delete, manage users at `/admin`, and see email sub status (read-only — users control their own preference).
