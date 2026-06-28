@@ -38,6 +38,7 @@ import { safeUrl } from '@/lib/utils';
 import type { IntelBriefing, IntelArticle, IntelCluster, TempArticle } from '@/db/schema';
 
 const MarkdownRenderer = dynamic(() => import('./MarkdownRenderer'), { ssr: false });
+const CustomizationPanel = dynamic(() => import('./CustomizationPanel'), { ssr: false });
 
 // ── Category colours ──────────────────────────────────────────────────────────
 
@@ -285,7 +286,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 			].join(' ')}>
 				<div className="px-6 py-5 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between">
 					<div>
-						<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-1">
+						<p className="text-xs font-bold tracking-widest uppercase text-accent mb-1">
 							Intelligence Monitor
 						</p>
 						<h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100 leading-snug tracking-tight">
@@ -374,7 +375,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 											>
 												<IconCalendar size={16} className="shrink-0 text-slate-500" />
 												<span className="flex-1 text-base font-mono font-medium tracking-wide">{b.trackingDate}</span>
-												{isActive && <IconChevronRight size={13} className="text-red-600 dark:text-red-500 shrink-0" />}
+												{isActive && <IconChevronRight size={13} className="text-accent shrink-0" />}
 											</button>
 										);
 									})
@@ -430,30 +431,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 					</div>
 				)}
 
-				{/* ── Email toggle — any signed-in user ── */}
-				{userRole && (
-					<div className="shrink-0 px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between">
-						<span className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-widest">Daily email</span>
-						<button
-							onClick={async () => {
-								const next = !emailOn;
-								setEmailOn(next);
-								await setMyEmailEnabled(next);
-							}}
-							className={[
-								'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none',
-								emailOn ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
-							].join(' ')}
-							aria-label={emailOn ? 'Disable daily email' : 'Enable daily email'}
-							title={emailOn ? 'Daily briefing emails ON — click to unsubscribe' : 'Daily briefing emails OFF — click to subscribe'}
-						>
-							<span className={[
-								'inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform',
-								emailOn ? 'translate-x-4' : 'translate-x-1',
-							].join(' ')} />
-						</button>
-					</div>
-				)}
+				{/* Email toggle moved to CustomizationPanel (bottom-right FAB) */}
 
 				<div className="shrink-0 px-3 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
 					<form onSubmit={e => { e.preventDefault(); commitSearch(searchInput); closeSidebarMobile(); }}>
@@ -505,8 +483,8 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 						{userRole ? (
 							<>
 								<div className="flex items-center gap-2 min-w-0">
-									<div className="w-7 h-7 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
-										<span className="text-xs font-bold text-red-600 dark:text-red-400">
+									<div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+										<span className="text-xs font-bold text-accent">
 											{userName?.charAt(0).toUpperCase() ?? '?'}
 										</span>
 									</div>
@@ -541,7 +519,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 								<p className="text-xs text-slate-400 dark:text-slate-500">Read-only · Sign in to save articles</p>
 								<Link
 									href="/login"
-									className="text-xs font-semibold px-2.5 py-1 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+									className="text-xs font-semibold px-2.5 py-1 rounded bg-accent hover:opacity-90 text-white transition-opacity"
 								>
 									Sign in
 								</Link>
@@ -564,7 +542,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 				<IconMenu2 size={20} />
 			</button>
 			<div className="flex-1 min-w-0">
-				<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 leading-none mb-0.5">
+				<p className="text-xs font-bold tracking-widest uppercase text-accent leading-none mb-0.5">
 					Intelligence Monitor
 				</p>
 				<p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
@@ -601,6 +579,12 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 						</div>
 					</div>
 				</main>
+				<CustomizationPanel
+					drawerOpen={false}
+					isLoggedIn={userRole !== null}
+					emailOn={emailOn}
+					onEmailToggle={async () => { const next = !emailOn; setEmailOn(next); await setMyEmailEnabled(next); }}
+				/>
 			</div>
 		);
 	}
@@ -612,7 +596,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 
 			<main className="flex-1 flex flex-col overflow-hidden md:overflow-y-auto print:overflow-visible print:h-auto">
 				{mobileTopBar}
-				<div className="flex-1 overflow-y-auto">
+				<div id="main-scroll" className="flex-1 overflow-y-auto reading-content">
 
 					{/* ── Search results view ────────────────────────────── */}
 					{view === 'search' && (() => {
@@ -625,9 +609,9 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 						}, {});
 						const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
 						return (
-							<div className="max-w-3xl mx-auto px-4 sm:px-10 py-10">
+							<div className="mx-auto px-4 sm:px-10 py-10" style={{ maxWidth: 'var(--reading-width, 48rem)' }}>
 								<header className="mb-8 pb-4 border-b border-slate-200 dark:border-slate-800">
-									<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-2 flex items-center gap-1.5">
+									<p className="text-xs font-bold tracking-widest uppercase text-accent mb-2 flex items-center gap-1.5">
 										<IconSearch size={13} />
 										Search Results
 									</p>
@@ -644,7 +628,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 												<input type="text" value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search again…" className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors" />
 												{(searchInput || searchQuery) && <button type="button" onClick={() => clearSearch(true)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><IconX size={13} /></button>}
 											</div>
-											<button type="submit" className="shrink-0 px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors">Search</button>
+											<button type="submit" className="shrink-0 px-4 py-2 text-sm font-semibold rounded-lg bg-accent hover:opacity-90 text-white transition-opacity">Search</button>
 										</div>
 									</form>
 								</header>
@@ -684,7 +668,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 
 					{/* ── Preserved view ─────────────────────────────────── */}
 					{view === 'preserved' && canPreserve && (
-						<div className="max-w-3xl mx-auto px-4 sm:px-10 py-10">
+						<div className="mx-auto px-4 sm:px-10 py-10" style={{ maxWidth: 'var(--reading-width, 48rem)' }}>
 							<header className="mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
 								<p className="text-xs font-bold tracking-widest uppercase text-amber-600 dark:text-amber-500 mb-2 flex items-center gap-1.5">
 									<IconArchive size={13} />
@@ -721,7 +705,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 
 					{/* ── Today's Feed view ──────────────────────────────── */}
 					{view === 'feed' && (
-						<div className="max-w-3xl mx-auto px-4 sm:px-10 py-10">
+						<div className="mx-auto px-4 sm:px-10 py-10" style={{ maxWidth: 'var(--reading-width, 48rem)' }}>
 							<header className="mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
 								<p className="text-xs font-bold tracking-widest uppercase text-emerald-600 dark:text-emerald-500 mb-2 flex items-center gap-1.5">
 									<IconLayoutGrid size={13} />
@@ -806,7 +790,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 															{matchedCluster ? (
 																<button
 																	onClick={() => setDrawer({ cluster: matchedCluster, articles: clusterArticles })}
-																	className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors py-0.5"
+																	className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:opacity-80 transition-opacity py-0.5"
 																>
 																	<IconArticle size={14} />
 																	View Full Analysis
@@ -847,9 +831,9 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 								<p className="text-base text-slate-500">Select a briefing date from the sidebar.</p>
 							</div>
 						) : (
-							<div className="max-w-3xl mx-auto px-4 sm:px-10 py-10">
+							<div className="mx-auto px-4 sm:px-10 py-10" style={{ maxWidth: 'var(--reading-width, 48rem)' }}>
 								<header className="mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
-									<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-2">
+									<p className="text-xs font-bold tracking-widest uppercase text-accent mb-2">
 										Intelligence Briefing
 									</p>
 									<h2 className="font-serif text-5xl text-slate-900 dark:text-slate-100 tracking-tight">
@@ -877,7 +861,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 													<input type="text" value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search all articles, categories… (Enter)" className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors" />
 													{(searchInput || searchQuery) && <button type="button" onClick={() => clearSearch(true)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><IconX size={13} /></button>}
 												</div>
-												<button type="submit" className="shrink-0 px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors">Search</button>
+												<button type="submit" className="shrink-0 px-4 py-2 text-sm font-semibold rounded-lg bg-accent hover:opacity-90 text-white transition-opacity">Search</button>
 											</div>
 										</form>
 									)}
@@ -956,6 +940,18 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 					setPreservedDrawer(null);
 				} : undefined}
 			/>
+
+			{/* Customization panel — floating FAB, bottom-right */}
+			<CustomizationPanel
+				drawerOpen={drawer !== null || preservedDrawer !== null}
+				isLoggedIn={userRole !== null}
+				emailOn={emailOn}
+				onEmailToggle={async () => {
+					const next = !emailOn;
+					setEmailOn(next);
+					await setMyEmailEnabled(next);
+				}}
+			/>
 		</div>
 	);
 }
@@ -1019,7 +1015,7 @@ function ClusterCard({ cluster, clusterArticles, onOpen, onPreserveAll, onDelete
 				<div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
 					<button
 						onClick={onOpen}
-						className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors py-1"
+						className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:opacity-80 transition-opacity py-1"
 					>
 						<IconArticle size={16} />
 						{isMultiSource ? `${clusterArticles.length} Publisher Perspectives` : 'Read Full Article'}
@@ -1114,7 +1110,7 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 				<div className="flex items-center justify-between px-5 sm:px-7 py-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
 					<div>
 						<div className="flex items-center gap-2 mb-0.5">
-							<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500">
+							<p className="text-xs font-bold tracking-widest uppercase text-accent">
 								{isMultiSource ? 'Multi-Source Story' : 'Full Article'}
 							</p>
 							{cluster?.category && (
@@ -1402,7 +1398,7 @@ function ArticleCard({ article, showDate, onPreserve, onDelete, onReadFull }: Ar
 					<div className="flex items-center gap-3">
 						<button
 							onClick={() => onReadFull(article)}
-							className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors py-1"
+							className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:opacity-80 transition-opacity py-1"
 						>
 							<IconArticle size={16} />
 							Read Full Article
@@ -1455,7 +1451,7 @@ function ArticleDrawer({ article, onClose, onPreserve, onUnpreserveAndDelete }: 
 				<div className="flex items-center justify-between px-5 sm:px-7 py-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
 					<div>
 						<div className="flex items-center gap-2 mb-0.5">
-							<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500">Full Article</p>
+							<p className="text-xs font-bold tracking-widest uppercase text-accent">Full Article</p>
 							{article?.category && <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full ${categoryStyle(article.category)}`}>{article.category}</span>}
 						</div>
 						<p className="text-sm text-slate-600 dark:text-slate-400">{article?.source ? `${article.source} · ` : ''}English analysis + translation</p>

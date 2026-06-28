@@ -142,6 +142,59 @@
   --muted-foreground: oklch(0.42 0 0);
 }
 
+/* ── UI Accent Color System ─────────────────────────────────────────────────── */
+
+:root {
+  --ui-accent:      #dc2626; /* red-600 — default */
+  --ui-accent-dark: #ef4444; /* red-500 for dark mode */
+}
+html[data-accent="blue"]    { --ui-accent: #2563eb; --ui-accent-dark: #60a5fa; }
+html[data-accent="amber"]   { --ui-accent: #d97706; --ui-accent-dark: #fbbf24; }
+html[data-accent="emerald"] { --ui-accent: #059669; --ui-accent-dark: #34d399; }
+html[data-accent="violet"]  { --ui-accent: #7c3aed; --ui-accent-dark: #a78bfa; }
+
+.text-accent              { color: var(--ui-accent); }
+.dark .text-accent        { color: var(--ui-accent-dark); }
+.hover\:text-accent:hover { color: var(--ui-accent); }
+.dark .hover\:text-accent:hover { color: var(--ui-accent-dark); }
+.bg-accent                { background-color: var(--ui-accent); }
+.hover\:bg-accent-dark:hover { background-color: color-mix(in srgb, var(--ui-accent) 85%, black); }
+.ring-accent              { --tw-ring-color: color-mix(in srgb, var(--ui-accent) 30%, transparent); }
+.focus\:ring-accent:focus { outline-color: color-mix(in srgb, var(--ui-accent) 30%, transparent); }
+.border-accent            { border-color: color-mix(in srgb, var(--ui-accent) 50%, transparent); }
+.focus\:border-accent:focus { border-color: color-mix(in srgb, var(--ui-accent) 50%, transparent); }
+
+/* ── Reading Customization ──────────────────────────────────────────────────── */
+
+:root {
+  --reading-font-family: var(--font-inter);
+  --reading-lh:    1.72;
+  --reading-width: 48rem;
+}
+
+/* Font size — sets html font-size so all rem units scale */
+html[data-rs="xs"] { font-size: 13px; }
+html[data-rs="sm"] { font-size: 15px; }
+/* base = browser default 16px — no override needed */
+html[data-rs="lg"] { font-size: 19px; }
+html[data-rs="xl"] { font-size: 21px; }
+
+/* Line height */
+html[data-rlh="compact"]      { --reading-lh: 1.45; }
+html[data-rlh="comfortable"]  { --reading-lh: 1.72; }
+html[data-rlh="spacious"]     { --reading-lh: 2.10; }
+
+/* Reading width */
+html[data-rw="narrow"] { --reading-width: 36rem; }
+html[data-rw="medium"] { --reading-width: 48rem; }
+html[data-rw="wide"]   { --reading-width: 64rem; }
+
+/* Applied to the main scrollable content area */
+.reading-content {
+  line-height: var(--reading-lh);
+  font-family: var(--reading-font-family);
+}
+
 /* Warm beige/cream tint on all light-mode surfaces */
 html:not(.dark) {
   background-color: oklch(0.972 0.013 78);
