@@ -29,4 +29,4 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 
 -- Seed admin account
 INSERT OR IGNORE INTO users (email, name, role, email_notifications)
-VALUES ('claudeupexcise@gmail.com', 'Subhan', 'admin', 1);
+VALUES ('shubhanraj2002@gmail.com', 'Subhan', 'admin', 1);
