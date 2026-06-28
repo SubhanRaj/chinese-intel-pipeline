@@ -37,7 +37,8 @@ src/app/globals.css           Tailwind v4 + Shadcn CSS tokens
 src/app/login/                Magic-link request page
 src/app/auth/verify/          Magic-link verify page (sets session cookie)
 src/app/admin/                User management panel (plain Tailwind, same tokens as main app)
-src/components/IntelViewer.tsx  All client UI (sidebar, briefing, feed, search)
+src/components/IntelViewer.tsx  Client UI (sidebar, briefing, feed, search; no email toggle)
+src/components/CustomizationPanel.tsx  Floating FAB: font/size/spacing/width/accent/email prefs (ssr:false)
 src/lib/auth.ts               getSession, requireAuth, createSession, deleteSession
 src/db/schema.ts              Drizzle schema (all tables incl. auth)
 ```

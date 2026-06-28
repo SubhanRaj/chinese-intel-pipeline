@@ -255,8 +255,19 @@ Sidebar search. Enter/Search commits query and opens a results page across all d
 ### Sidebar controls
 - **Dark/light mode toggle** — persisted in `localStorage` (no flash on refresh — inline script in `<head>` applies dark class before first paint). Available to all users including anonymous.
 - **Auth footer** — anonymous users see a Sign in button; signed-in users see their name, role, an Admin link (admin only), and Sign out. Logout redirects to briefing home.
-- **Daily email toggle** — per-user on/off, visible to any signed-in user. Updates `users.email_notifications` for the current user. Admin cannot override a user's preference.
 - **GitHub link** — links to repository from sidebar footer
+
+### Customization panel
+Floating FAB in the bottom-right corner. Collapses by default; auto-hides when the article drawer opens or when the user scrolls. All preferences saved to `localStorage` — applied before first paint (zero FOUC) via the `beforeInteractive` inline script.
+
+| Control | Options | Notes |
+|---|---|---|
+| Font family | 10 fonts (Inter, Space Grotesk, DM Serif, Lora, Merriweather, Playfair Display, Crimson Text, Bitter, Geist Mono, JetBrains Mono) | Google Fonts loaded on demand; font loading spinner + button lock until ready; cached via Cache API for offline use |
+| Font size | XS / S / Base / L / XL | Sets `font-size` on `<html>` so all `rem` units scale |
+| Line spacing | Compact / Comfortable / Spacious | CSS `--reading-lh` variable |
+| Reading width | Narrow / Medium / Wide | CSS `--reading-width` variable (36 / 48 / 64 rem) |
+| Accent color | Red / Blue / Amber / Emerald / Violet | `--ui-accent` CSS variable; `.text-accent` / `.bg-accent` utilities |
+| Email toggle | On / Off | Visible to signed-in users only; updates `users.email_notifications` |
 
 ---
 
@@ -264,7 +275,7 @@ Sidebar search. Enter/Search commits query and opens a results page across all d
 
 Daily briefings via **Resend**. Table-based HTML template (inline CSS — required for Gmail). One row per cluster.
 
-**Current behaviour:** Per-user subscription. Scraper queries `users WHERE email_notifications = 1` and sends the briefing to each address. Users toggle their own subscription from the dashboard sidebar (`setMyEmailEnabled` server action). Admin can see subscription status in `/admin` but cannot override a user's choice — only sets the default (on) at account creation. `settings.email_enabled` and `RESEND_TO_EMAIL` are no longer used.
+**Current behaviour:** Per-user subscription. Scraper queries `users WHERE email_notifications = 1` and sends the briefing to each address. Users toggle their own subscription from the **customization panel** (bottom-right FAB, visible to signed-in users only; `setMyEmailEnabled` server action). Admin can see subscription status in `/admin` but cannot override a user's choice — only sets the default (on) at account creation. `settings.email_enabled` and `RESEND_TO_EMAIL` are no longer used.
 
 **Secrets on scraper worker:** `RESEND_API_KEY` ✓, `RESEND_FROM_EMAIL` ✓ (`RESEND_TO_EMAIL` deprecated — not used)
 **Secrets on dashboard worker:** `RESEND_API_KEY` ✓, `RESEND_FROM_EMAIL` ✓ (`onboarding@resend.dev`), `SESSION_SECRET` ✓
@@ -467,11 +478,13 @@ chinese-intel-pipeline/
     │   │   └── admin/                   User mgmt panel (plain Tailwind, same tokens as main app)
     │   │                                list/add/remove users; roles; read-only email sub status
     │   ├── components/
-    │   │   ├── IntelViewer.tsx          Client: sidebar (email toggle, auth footer, GitHub),
-    │   │   │                                    Today's Feed (collapsible by source),
-    │   │   │                                    Intel Briefing, ClusterCard, ClusterDrawer, search
+    │   │   ├── IntelViewer.tsx          Client: sidebar (auth footer, GitHub), Today's Feed
+    │   │   │                                    (collapsible by source), Intel Briefing,
+    │   │   │                                    ClusterCard, ClusterDrawer, search
+    │   │   ├── CustomizationPanel.tsx   Floating FAB: font/size/spacing/width/accent/email prefs
+    │   │   │                            (client-only, dynamic import, ssr:false)
     │   │   ├── ThemeToggle.tsx          Shared dark/light/system toggle; works across briefing + admin
-    │   │   ├── MarkdownRenderer.tsx     Legacy briefings (react-markdown, ssr:false)
+    │   │   ├── MarkdownRenderer.tsx     react-markdown + rehype-sanitize; custom <a> renderer (XSS guard)
     │   │   └── ui/                      Shadcn primitives
     │   ├── lib/
     │   │   └── auth.ts                  getSession, requireAuth, createSession, deleteSession

@@ -21,15 +21,15 @@ interface FontOption {
 }
 
 const FONTS: FontOption[] = [
-	{ id: 'inter',        label: 'Inter',          category: 'Sans',  cssFamily: 'var(--font-inter)',                  familyName: null,              googleUrl: null },
+	{ id: 'inter',        label: 'Inter',          category: 'Sans',  cssFamily: "'Inter', sans-serif",                familyName: 'Inter',           googleUrl: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap' },
 	{ id: 'space-grotesk',label: 'Space Grotesk',  category: 'Sans',  cssFamily: "'Space Grotesk', sans-serif",        familyName: 'Space Grotesk',   googleUrl: 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap' },
-	{ id: 'dm-serif',     label: 'DM Serif',        category: 'Serif', cssFamily: 'var(--font-dm-serif)',               familyName: null,              googleUrl: null },
+	{ id: 'dm-serif',     label: 'DM Serif',        category: 'Serif', cssFamily: "'DM Serif Display', serif",          familyName: 'DM Serif Display', googleUrl: 'https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&display=swap' },
 	{ id: 'lora',         label: 'Lora',            category: 'Serif', cssFamily: "'Lora', Georgia, serif",             familyName: 'Lora',            googleUrl: 'https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&display=swap' },
 	{ id: 'merriweather', label: 'Merriweather',    category: 'Serif', cssFamily: "'Merriweather', Georgia, serif",     familyName: 'Merriweather',    googleUrl: 'https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&display=swap' },
 	{ id: 'playfair',     label: 'Playfair',        category: 'Serif', cssFamily: "'Playfair Display', Georgia, serif", familyName: 'Playfair Display', googleUrl: 'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap' },
 	{ id: 'crimson',      label: 'Crimson',         category: 'Serif', cssFamily: "'Crimson Text', Georgia, serif",     familyName: 'Crimson Text',    googleUrl: 'https://fonts.googleapis.com/css2?family=Crimson+Text:wght@400;600&display=swap' },
 	{ id: 'bitter',       label: 'Bitter',          category: 'Slab',  cssFamily: "'Bitter', Georgia, serif",           familyName: 'Bitter',          googleUrl: 'https://fonts.googleapis.com/css2?family=Bitter:wght@400;700&display=swap' },
-	{ id: 'geist-mono',   label: 'Geist Mono',      category: 'Mono',  cssFamily: 'var(--font-geist-mono)',             familyName: null,              googleUrl: null },
+	{ id: 'geist-mono',   label: 'Geist Mono',      category: 'Mono',  cssFamily: "'Geist Mono', monospace",            familyName: 'Geist Mono',      googleUrl: 'https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap' },
 	{ id: 'jetbrains',    label: 'JetBrains',       category: 'Mono',  cssFamily: "'JetBrains Mono', monospace",        familyName: 'JetBrains Mono',  googleUrl: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap' },
 ];
 
@@ -171,15 +171,20 @@ export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, on
 	const [ready, setReady]           = useState(false);
 	const [loadingFontId, setLoadingFontId] = useState<string | null>(null);
 
-	// Bootstrap from localStorage, apply immediately
+	// Bootstrap from localStorage: load the saved (or default) font before showing the FAB
 	useEffect(() => {
 		const p = loadPrefs();
 		setPrefs(p);
 		const font = FONTS.find(f => f.id === p.fontId) ?? FONTS[0];
-		applyPrefs(p, font);
-		// Silently pre-load the saved font in the background (no loading indicator on mount)
-		if (font.googleUrl && font.familyName) loadGoogleFont(font.googleUrl, font.familyName).catch(() => {});
-		setReady(true);
+		const init = async () => {
+			// Inter is already in the <head> stylesheet so this resolves immediately on cache hit
+			if (font.googleUrl && font.familyName) {
+				try { await loadGoogleFont(font.googleUrl, font.familyName); } catch { /* fall through to system fallback */ }
+			}
+			applyPrefs(p, font);
+			setReady(true);
+		};
+		init();
 	}, []);
 
 	// Collapse panel (keep button) when a drawer opens

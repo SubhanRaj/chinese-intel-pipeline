@@ -130,11 +130,11 @@
 	}
 }
 
-/* Font registrations */
+/* Font registrations — all loaded via Google Fonts; no Next.js font variables */
 @theme inline {
-  --font-sans: var(--font-inter);
-  --font-serif: var(--font-dm-serif);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: 'Inter', sans-serif;
+  --font-serif: 'DM Serif Display', serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', monospace;
 }
 
 /* Improved light-mode contrast overrides */
@@ -167,7 +167,7 @@ html[data-accent="violet"]  { --ui-accent: #7c3aed; --ui-accent-dark: #a78bfa; }
 /* ── Reading Customization ──────────────────────────────────────────────────── */
 
 :root {
-  --reading-font-family: var(--font-inter);
+  --reading-font-family: 'Inter', sans-serif;
   --reading-lh:    1.72;
   --reading-width: 48rem;
 }

@@ -1,25 +1,6 @@
 import type { Metadata } from "next";
-import { Inter, DM_Serif_Display, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
-
-// Inter — clean, professional sans-serif for all UI and body text
-const inter = Inter({
-	variable: "--font-inter",
-	subsets: ["latin"],
-});
-
-// DM Serif Display — authoritative serif for the date heading and article titles only
-const dmSerif = DM_Serif_Display({
-	variable: "--font-dm-serif",
-	subsets: ["latin"],
-	weight: "400",
-});
-
-const geistMono = Geist_Mono({
-	variable: "--font-geist-mono",
-	subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
 	title: {
@@ -69,10 +50,18 @@ export default function RootLayout({
 	return (
 		<html lang="en">
 			<head>
-				{/* Inline script — no network round-trip, runs synchronously during HTML parse before first paint */}
+				{/* Pre-connect to Google Fonts to reduce latency */}
+				<link rel="preconnect" href="https://fonts.googleapis.com" />
+				<link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+				{/* Inter — default reading font; loaded eagerly so it's ready before JS hydrates */}
+				<link
+					rel="stylesheet"
+					href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+				/>
+				{/* Inline script — runs synchronously before first paint: applies dark mode + reading prefs */}
 				<Script id="theme-init" strategy="beforeInteractive">{`(function(){try{var t=localStorage.getItem('intel-theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark');var p=JSON.parse(localStorage.getItem('intel-reading-prefs-v1')||'{}');var r=document.documentElement;if(p.fontSize&&p.fontSize!=='base')r.setAttribute('data-rs',p.fontSize);if(p.lineHeight&&p.lineHeight!=='comfortable')r.setAttribute('data-rlh',p.lineHeight);if(p.readingWidth&&p.readingWidth!=='medium')r.setAttribute('data-rw',p.readingWidth);if(p.accent&&p.accent!=='red')r.setAttribute('data-accent',p.accent)}catch(e){}})();`}</Script>
 			</head>
-			<body className={`${inter.variable} ${dmSerif.variable} ${geistMono.variable} antialiased`}>
+			<body className="antialiased">
 				{children}
 			</body>
 		</html>
