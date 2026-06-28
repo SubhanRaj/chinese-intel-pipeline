@@ -5,12 +5,17 @@ import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
 import { intelArticles, settings } from '@/db/schema';
 import { revalidatePath } from 'next/cache';
+import { requireAuth } from '@/lib/auth';
+
+// Re-export logout so client components import from one place
+export { logout } from '@/app/login/actions';
 
 function validId(id: unknown): id is number {
 	return typeof id === 'number' && Number.isInteger(id) && id > 0;
 }
 
 export async function togglePreserve(id: number, current: number) {
+	await requireAuth('user');
 	if (!validId(id)) return;
 	// current must be exactly 0 or 1
 	if (current !== 0 && current !== 1) return;
@@ -26,6 +31,7 @@ export async function togglePreserve(id: number, current: number) {
 
 /** Removes the preservation lock and immediately deletes the article in one operation. */
 export async function unpreserveAndDelete(id: number) {
+	await requireAuth('admin');
 	if (!validId(id)) return;
 
 	const { env } = await getCloudflareContext({ async: true });
@@ -38,6 +44,7 @@ export async function unpreserveAndDelete(id: number) {
 
 /** Preserve or unpreserve every article in a cluster in one action. */
 export async function togglePreserveCluster(ids: number[], currentlyPreserved: boolean) {
+	await requireAuth('user');
 	if (!ids.length || !ids.every(validId)) return;
 
 	const { env } = await getCloudflareContext({ async: true });
@@ -51,6 +58,7 @@ export async function togglePreserveCluster(ids: number[], currentlyPreserved: b
 
 /** Delete all non-preserved articles in a cluster. Preserved ones are silently skipped. */
 export async function deleteCluster(ids: number[]) {
+	await requireAuth('admin');
 	if (!ids.length || !ids.every(validId)) return;
 
 	const { env } = await getCloudflareContext({ async: true });
@@ -68,6 +76,7 @@ export async function deleteCluster(ids: number[]) {
 }
 
 export async function setEmailEnabled(enabled: boolean) {
+	await requireAuth('admin');
 	const { env } = await getCloudflareContext({ async: true });
 	await env.DB
 		.prepare(`INSERT INTO settings (key, value) VALUES ('email_enabled', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
@@ -77,6 +86,7 @@ export async function setEmailEnabled(enabled: boolean) {
 }
 
 export async function deleteArticle(id: number) {
+	await requireAuth('admin');
 	if (!validId(id)) return;
 
 	const { env } = await getCloudflareContext({ async: true });

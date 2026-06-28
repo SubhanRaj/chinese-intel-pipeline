@@ -63,3 +63,34 @@ export const settings = sqliteTable('settings', {
 
 export type TempArticle = typeof tempArticles.$inferSelect;
 export type NewTempArticle = typeof tempArticles.$inferInsert;
+
+// ── Auth tables (migration 0009) ──────────────────────────────────────────────
+
+export const users = sqliteTable('users', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	email: text('email').unique().notNull(),
+	name: text('name').notNull(),
+	role: text('role').notNull().default('user'),
+	emailNotifications: integer('email_notifications').notNull().default(1),
+	createdAt: text('created_at').default(sql`(datetime('now'))`),
+});
+
+export const authMagicLinks = sqliteTable('auth_magic_links', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	email: text('email').notNull(),
+	tokenHash: text('token_hash').unique().notNull(),
+	expiresAt: text('expires_at').notNull(),
+	used: integer('used').notNull().default(0),
+	createdAt: text('created_at').default(sql`(datetime('now'))`),
+});
+
+export const authSessions = sqliteTable('auth_sessions', {
+	id: text('id').primaryKey(),
+	userId: integer('user_id').notNull().references(() => users.id),
+	expiresAt: text('expires_at'),
+	persistent: integer('persistent').notNull().default(0),
+	createdAt: text('created_at').default(sql`(datetime('now'))`),
+});
+
+export type User = typeof users.$inferSelect;
+export type AuthSession = typeof authSessions.$inferSelect;
