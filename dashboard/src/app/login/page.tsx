@@ -14,13 +14,13 @@ export default async function LoginPage() {
 		<main className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-16">
 			<div className="w-full max-w-sm">
 				<div className="mb-8 text-center">
-					<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-2">
+					<p className="text-sm font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-2">
 						Intelligence Monitor
 					</p>
-					<h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+					<h1 className="text-3xl font-semibold text-slate-900 dark:text-slate-100">
 						Chinese Provincial Press
 					</h1>
-					<p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+					<p className="text-base text-slate-500 dark:text-slate-400 mt-2">
 						Sign in to access your dashboard
 					</p>
 				</div>
@@ -29,7 +29,7 @@ export default async function LoginPage() {
 					<LoginForm />
 				</div>
 
-				<p className="text-center text-xs text-slate-400 dark:text-slate-600 mt-6">
+				<p className="text-center text-sm text-slate-400 dark:text-slate-600 mt-6">
 					Access is by invitation only. Contact the administrator to request access.
 				</p>
 			</div>

@@ -19,9 +19,9 @@ export default async function AdminPage() {
 			{/* Header */}
 			<div className="flex items-center justify-between mb-8">
 				<div>
-					<p className="text-xs font-bold tracking-widest uppercase text-red-600 mb-1">Admin Panel</p>
-					<h1 className="text-2xl font-bold text-slate-900">User Management</h1>
-					<p className="text-sm text-slate-500 mt-0.5">Signed in as {session!.name} · {session!.email}</p>
+					<p className="text-sm font-bold tracking-widest uppercase text-red-600 mb-1">Admin Panel</p>
+					<h1 className="text-3xl font-bold text-slate-900">User Management</h1>
+					<p className="text-base text-slate-500 mt-0.5">Signed in as {session!.name} · {session!.email}</p>
 				</div>
 				<a href="/" className="btn btn-ghost btn-sm">← Dashboard</a>
 			</div>
@@ -60,7 +60,7 @@ export default async function AdminPage() {
 							{allUsers.map(u => (
 								<tr key={u.id}>
 									<td className="font-medium">{u.name}</td>
-									<td className="font-mono text-sm">{u.email}</td>
+									<td className="font-mono text-base">{u.email}</td>
 									<td>
 										<span className={`badge badge-sm ${u.role === 'admin' ? 'badge-error' : 'badge-ghost'}`}>
 											{u.role}
@@ -75,7 +75,7 @@ export default async function AdminPage() {
 											/>
 										</form>
 									</td>
-									<td className="text-sm text-slate-500 font-mono">
+									<td className="text-base text-slate-500 font-mono">
 										{u.createdAt ? u.createdAt.slice(0, 10) : '—'}
 									</td>
 									<td>
