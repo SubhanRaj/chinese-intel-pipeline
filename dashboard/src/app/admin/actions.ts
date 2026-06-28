@@ -4,7 +4,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
 import { requireAuth } from '@/lib/auth';
-import { users } from '@/db/schema';
+import { users, authSessions } from '@/db/schema';
 import { revalidatePath } from 'next/cache';
 
 function validId(id: unknown): id is number {
@@ -19,6 +19,7 @@ export async function addUser(formData: FormData): Promise<{ error?: string }> {
 	const role = formData.get('role') as string;
 
 	if (!name || !email || !email.includes('@')) return { error: 'Name and valid email are required.' };
+	if (name.length > 100) return { error: 'Name must be 100 characters or fewer.' };
 	if (role !== 'admin' && role !== 'user') return { error: 'Invalid role.' };
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -36,8 +37,10 @@ export async function addUser(formData: FormData): Promise<{ error?: string }> {
 }
 
 export async function removeUser(id: number): Promise<void> {
-	await requireAuth('admin');
+	const session = await requireAuth('admin');
 	if (!validId(id)) return;
+	// Prevent self-deletion — UI hides the button but the action enforces it too
+	if (id === session.id) return;
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const { env } = await getCloudflareContext({ async: true }) as { env: any };
@@ -52,14 +55,13 @@ export async function removeUser(id: number): Promise<void> {
 	revalidatePath('/admin');
 }
 
-export async function toggleUserEmail(id: number, current: number): Promise<void> {
+export async function revokeUserSessions(id: number): Promise<void> {
 	await requireAuth('admin');
 	if (!validId(id)) return;
-	if (current !== 0 && current !== 1) return;
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const { env } = await getCloudflareContext({ async: true }) as { env: any };
 	const db = drizzle(env.DB);
-	await db.update(users).set({ emailNotifications: current ? 0 : 1 }).where(eq(users.id, id));
+	await db.delete(authSessions).where(eq(authSessions.userId, id));
 	revalidatePath('/admin');
 }

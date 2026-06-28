@@ -72,7 +72,10 @@ export async function getSession(): Promise<SessionUser | null> {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const { env } = await getCloudflareContext({ async: true }) as { env: any };
 	const secret: string = env.SESSION_SECRET ?? '';
-	if (!secret) return null; // Secret not configured
+	if (!secret) {
+		console.error('[AUTH] FATAL: SESSION_SECRET is not configured — all sessions are invalid. Set the secret via: cd dashboard && npx wrangler secret put SESSION_SECRET');
+		return null;
+	}
 
 	const valid = await hmacVerify(rawId, sig, secret);
 	if (!valid) return null;

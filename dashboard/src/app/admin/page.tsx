@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import { asc, count, eq } from 'drizzle-orm';
 import { users, intelBriefings, intelArticles, tempArticles } from '@/db/schema';
 import { getSession } from '@/lib/auth';
-import { addUser, removeUser } from './actions';
+import { addUser, removeUser, revokeUserSessions } from './actions';
 import AddUserForm from './AddUserForm';
 import ThemeToggle from '@/components/ThemeToggle';
 
@@ -154,16 +154,27 @@ export default async function AdminPage() {
 										{u.createdAt ? u.createdAt.slice(0, 10) : '—'}
 									</td>
 									<td className="px-5 py-3.5">
-										{u.email !== session!.email && (
-											<form action={removeUser.bind(null, u.id)}>
+										<div className="flex items-center gap-3">
+											<form action={revokeUserSessions.bind(null, u.id)}>
 												<button
 													type="submit"
-													className="text-xs font-medium text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:underline transition-colors"
+													className="text-xs font-medium text-amber-600 dark:text-amber-500 hover:text-amber-800 dark:hover:text-amber-300 hover:underline transition-colors"
+													title="Sign out all active sessions for this user"
 												>
-													Remove
+													Revoke sessions
 												</button>
 											</form>
-										)}
+											{u.email !== session!.email && (
+												<form action={removeUser.bind(null, u.id)}>
+													<button
+														type="submit"
+														className="text-xs font-medium text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:underline transition-colors"
+													>
+														Remove
+													</button>
+												</form>
+											)}
+										</div>
 									</td>
 								</tr>
 							))}
