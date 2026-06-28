@@ -46,8 +46,12 @@ export const metadata: Metadata = {
 			"Daily AI-powered intelligence briefings from seven Chinese provincial newspapers.",
 	},
 	icons: {
-		icon: "/favicon.svg",
-		apple: "/favicon.svg",
+		// SVG for Chrome/Firefox; PNG fallback for Safari (no SVG favicon support)
+		icon: [
+			{ url: "/favicon.svg", type: "image/svg+xml" },
+			{ url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+		],
+		apple: "/apple-touch-icon.png",
 	},
 	manifest: "/manifest.json",
 	appleWebApp: {
