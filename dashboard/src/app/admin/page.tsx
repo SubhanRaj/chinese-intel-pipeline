@@ -5,7 +5,9 @@ import { users, intelBriefings, intelArticles, tempArticles } from '@/db/schema'
 import { getSession } from '@/lib/auth';
 import { addUser, removeUser } from './actions';
 import AddUserForm from './AddUserForm';
-import ThemeToggle from './ThemeToggle';
+
+const card = 'bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800';
+const statCard = `${card} p-5`;
 
 export default async function AdminPage() {
 	const session = await getSession();
@@ -29,14 +31,8 @@ export default async function AdminPage() {
 		db.select({ total: count() }).from(intelArticles),
 		db.select({ total: count() }).from(intelArticles).where(eq(intelArticles.isPreserved, 1)),
 		db.select({ total: count() }).from(tempArticles).where(eq(tempArticles.trackingDate, today)),
-		env.DB.prepare(`
-			SELECT source, COUNT(*) as cnt
-			FROM intel_articles
-			GROUP BY source
-			ORDER BY cnt DESC
-		`).all() as Promise<{ results: { source: string; cnt: number }[] }>,
-		db.select({ trackingDate: intelBriefings.trackingDate }).from(intelBriefings)
-			.orderBy(asc(intelBriefings.trackingDate)).limit(999),
+		env.DB.prepare(`SELECT source, COUNT(*) as cnt FROM intel_articles GROUP BY source ORDER BY cnt DESC`).all() as Promise<{ results: { source: string; cnt: number }[] }>,
+		db.select({ trackingDate: intelBriefings.trackingDate }).from(intelBriefings).orderBy(asc(intelBriefings.trackingDate)).limit(999),
 	]);
 
 	const emailSubCount = allUsers.filter(u => u.emailNotifications).length;
@@ -44,142 +40,126 @@ export default async function AdminPage() {
 	const lastRun = latestBriefing.at(-1)?.trackingDate ?? '—';
 
 	return (
-		<div className="max-w-5xl mx-auto px-4 py-10">
+		<main className="min-h-screen bg-slate-50 dark:bg-slate-950 px-4 py-10">
+		<div className="max-w-5xl mx-auto">
 
 			{/* Header */}
-			<div className="flex items-start justify-between mb-8">
+			<div className="flex items-start justify-between mb-10">
 				<div>
-					<p className="text-sm font-bold tracking-widest uppercase text-red-600 mb-1">Admin Panel</p>
-					<h1 className="text-3xl font-bold">User Management</h1>
-					<p className="text-base opacity-60 mt-0.5">Signed in as {session!.name} · {session!.email}</p>
+					<p className="text-sm font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-1">Admin Panel</p>
+					<h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Dashboard</h1>
+					<p className="text-base text-slate-500 dark:text-slate-400 mt-1">
+						Signed in as {session!.name} · {session!.email}
+					</p>
 				</div>
-				<div className="flex items-center gap-2 mt-1">
-					<ThemeToggle />
-					<a href="/" className="btn btn-ghost btn-sm">← Dashboard</a>
-				</div>
+				<a
+					href="/"
+					className="mt-1 px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+				>
+					← Dashboard
+				</a>
 			</div>
 
-			{/* ── Pipeline Stats ─────────────────────────────────────────────── */}
-			<h2 className="text-lg font-semibold mb-3 opacity-70">Pipeline Stats</h2>
-			<div className="stats stats-horizontal shadow mb-4 w-full">
-				<div className="stat">
-					<div className="stat-title">Briefings</div>
-					<div className="stat-value text-2xl">{totalBriefings}</div>
-					<div className="stat-desc">Last run: {lastRun}</div>
-				</div>
-				<div className="stat">
-					<div className="stat-title">Intel articles</div>
-					<div className="stat-value text-2xl">{totalArticles}</div>
-					<div className="stat-desc">{preservedArticles} preserved</div>
-				</div>
-				<div className="stat">
-					<div className="stat-title">Today&apos;s feed</div>
-					<div className="stat-value text-2xl">{todayFeedCount}</div>
-					<div className="stat-desc">scraped articles ({today})</div>
-				</div>
-				<div className="stat">
-					<div className="stat-title">Email subs</div>
-					<div className="stat-value text-2xl">{emailSubCount}</div>
-					<div className="stat-desc">users subscribed</div>
-				</div>
+			{/* Pipeline Stats */}
+			<h2 className="text-xs font-bold tracking-widest uppercase text-slate-500 dark:text-slate-400 mb-3">Pipeline Stats</h2>
+			<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+				{[
+					{ label: 'Briefings', value: totalBriefings, sub: `Last: ${lastRun}` },
+					{ label: 'Intel articles', value: totalArticles, sub: `${preservedArticles} preserved` },
+					{ label: "Today's feed", value: todayFeedCount, sub: today },
+					{ label: 'Email subs', value: emailSubCount, sub: 'subscribed users' },
+				].map(s => (
+					<div key={s.label} className={statCard}>
+						<p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{s.label}</p>
+						<p className="text-3xl font-bold text-slate-900 dark:text-slate-100">{s.value}</p>
+						<p className="text-xs text-slate-400 dark:text-slate-600 mt-1">{s.sub}</p>
+					</div>
+				))}
 			</div>
 
 			{/* Source breakdown */}
 			{sources.length > 0 && (
-				<div className="card bg-base-100 shadow mb-8">
-					<div className="card-body py-4">
-						<h3 className="font-semibold text-base mb-3">Articles by source (all time)</h3>
-						<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-							{sources.map(s => (
-								<div key={s.source} className="flex items-center justify-between bg-base-200 rounded-lg px-3 py-2">
-									<span className="text-sm font-medium">{s.source}</span>
-									<span className="badge badge-neutral badge-sm">{s.cnt}</span>
-								</div>
-							))}
-						</div>
+				<div className={`${card} p-5 mb-8`}>
+					<h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4">Articles by source (all time)</h3>
+					<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+						{sources.map(s => (
+							<div key={s.source} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2">
+								<span className="text-sm font-medium text-slate-700 dark:text-slate-300">{s.source}</span>
+								<span className="text-sm font-bold text-slate-500 dark:text-slate-400">{s.cnt}</span>
+							</div>
+						))}
 					</div>
 				</div>
 			)}
 
-			{/* ── User Management ────────────────────────────────────────────── */}
-			<h2 className="text-lg font-semibold mb-3 opacity-70">Users</h2>
-			<div className="stats stats-horizontal shadow mb-6 w-full">
-				<div className="stat">
-					<div className="stat-title">Total users</div>
-					<div className="stat-value">{allUsers.length}</div>
-				</div>
-				<div className="stat">
-					<div className="stat-title">Admins</div>
-					<div className="stat-value">{allUsers.filter(u => u.role === 'admin').length}</div>
-				</div>
-				<div className="stat">
-					<div className="stat-title">Email subs</div>
-					<div className="stat-value">{emailSubCount}</div>
-					<div className="stat-desc">subscribed to briefings</div>
-				</div>
-			</div>
-
-			{/* User table */}
-			<div className="card bg-base-100 shadow mb-4">
-				<div className="card-body p-0">
-					<table className="table table-zebra text-base">
-						<thead>
-							<tr>
-								<th>Name</th>
-								<th>Email</th>
-								<th>Role</th>
-								<th title="Controlled by each user from their own sidebar. Admin cannot override — only visible here.">
-									Email sub ⓘ
+			{/* Users */}
+			<h2 className="text-xs font-bold tracking-widest uppercase text-slate-500 dark:text-slate-400 mb-3">Users</h2>
+			<div className={`${card} mb-2 overflow-hidden`}>
+				<table className="w-full text-sm">
+					<thead>
+						<tr className="border-b border-slate-200 dark:border-slate-800">
+							{['Name', 'Email', 'Role', 'Email sub ⓘ', 'Joined', ''].map(h => (
+								<th
+									key={h}
+									className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide"
+									title={h === 'Email sub ⓘ' ? 'Controlled by each user from their sidebar — admin cannot override.' : undefined}
+								>
+									{h}
 								</th>
-								<th>Joined</th>
-								<th></th>
-							</tr>
-						</thead>
-						<tbody>
-							{allUsers.map(u => (
-								<tr key={u.id}>
-									<td className="font-medium">{u.name}</td>
-									<td className="font-mono">{u.email}</td>
-									<td>
-										<span className={`badge badge-md ${u.role === 'admin' ? 'badge-error' : 'badge-ghost'}`}>
-											{u.role}
-										</span>
-									</td>
-									<td>
-										<span className={`badge badge-md ${u.emailNotifications ? 'badge-success' : 'badge-ghost opacity-50'}`}>
-											{u.emailNotifications ? 'on' : 'off'}
-										</span>
-									</td>
-									<td className="font-mono opacity-60">
-										{u.createdAt ? u.createdAt.slice(0, 10) : '—'}
-									</td>
-									<td>
-										{u.email !== session!.email && (
-											<form action={removeUser.bind(null, u.id)}>
-												<button type="submit" className="btn btn-ghost btn-sm text-error">
-													Remove
-												</button>
-											</form>
-										)}
-									</td>
-								</tr>
 							))}
-						</tbody>
-					</table>
-				</div>
+						</tr>
+					</thead>
+					<tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+						{allUsers.map(u => (
+							<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+								<td className="px-5 py-3.5 font-medium text-slate-900 dark:text-slate-100">{u.name}</td>
+								<td className="px-5 py-3.5 font-mono text-slate-600 dark:text-slate-400">{u.email}</td>
+								<td className="px-5 py-3.5">
+									<span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+										u.role === 'admin'
+											? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+											: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+									}`}>
+										{u.role}
+									</span>
+								</td>
+								<td className="px-5 py-3.5">
+									<span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+										u.emailNotifications
+											? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+											: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
+									}`}>
+										{u.emailNotifications ? 'on' : 'off'}
+									</span>
+								</td>
+								<td className="px-5 py-3.5 font-mono text-slate-500 dark:text-slate-400">
+									{u.createdAt ? u.createdAt.slice(0, 10) : '—'}
+								</td>
+								<td className="px-5 py-3.5">
+									{u.email !== session!.email && (
+										<form action={removeUser.bind(null, u.id)}>
+											<button type="submit" className="text-sm text-red-500 hover:text-red-700 dark:hover:text-red-400 hover:underline transition-colors">
+												Remove
+											</button>
+										</form>
+									)}
+								</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
 			</div>
-			<p className="text-sm opacity-50 mb-8">
-				ⓘ Email subscription is user-controlled. Each user toggles it from their own sidebar — admin cannot override it. The default when adding a new user is &ldquo;on&rdquo;. Briefings are sent to all users with it enabled.
+			<p className="text-xs text-slate-400 dark:text-slate-600 mb-8">
+				ⓘ Email subscription is user-controlled. Each user toggles it from their own sidebar. Default for new users: on.
 			</p>
 
-			{/* Add user form */}
-			<div className="card bg-base-100 shadow">
-				<div className="card-body">
-					<h2 className="card-title text-xl mb-2">Add user</h2>
-					<AddUserForm addUser={addUser} />
-				</div>
+			{/* Add user */}
+			<div className={`${card} p-6`}>
+				<h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-5">Add user</h2>
+				<AddUserForm addUser={addUser} />
 			</div>
 
 		</div>
+		</main>
 	);
 }

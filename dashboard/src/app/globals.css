@@ -2,9 +2,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark, .dark *));
 @plugin "@tailwindcss/typography";
-@variant dark (&:where(.dark, .dark *));
 
 .dark {
 	--background: oklch(0.145 0 0);

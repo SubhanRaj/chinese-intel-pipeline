@@ -6,6 +6,9 @@ interface Props {
 	addUser: (formData: FormData) => Promise<{ error?: string }>;
 }
 
+const inputClass = 'w-full px-3 py-2.5 text-base rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors';
+const labelClass = 'block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5';
+
 export default function AddUserForm({ addUser }: Props) {
 	const [error, setError] = useState('');
 	const [success, setSuccess] = useState(false);
@@ -30,34 +33,37 @@ export default function AddUserForm({ addUser }: Props) {
 
 	return (
 		<form ref={formRef} onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-			<div className="form-control">
-				<label className="label"><span className="label-text text-base">Name</span></label>
-				<input type="text" name="name" required placeholder="Full name" className="input input-bordered input-md text-base" />
+			<div>
+				<label htmlFor="add-name" className={labelClass}>Name</label>
+				<input id="add-name" type="text" name="name" required placeholder="Full name" className={inputClass} />
 			</div>
-			<div className="form-control">
-				<label className="label"><span className="label-text text-base">Email</span></label>
-				<input type="email" name="email" required placeholder="user@example.com" className="input input-bordered input-md text-base" />
+			<div>
+				<label htmlFor="add-email" className={labelClass}>Email</label>
+				<input id="add-email" type="email" name="email" required placeholder="user@example.com" className={inputClass} />
 			</div>
-			<div className="form-control">
-				<label className="label"><span className="label-text text-base">Role</span></label>
-				<select name="role" className="select select-bordered select-md text-base" defaultValue="user">
+			<div>
+				<label htmlFor="add-role" className={labelClass}>Role</label>
+				<select id="add-role" name="role" defaultValue="user" className={inputClass}>
 					<option value="user">User</option>
 					<option value="admin">Admin</option>
 				</select>
 			</div>
-			<div className="form-control justify-end">
-				<button type="submit" disabled={pending} className="btn btn-error btn-md text-base">
+			<div className="flex items-end">
+				<button
+					type="submit"
+					disabled={pending}
+					className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-base font-semibold rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/50"
+				>
 					{pending ? 'Adding…' : 'Add user'}
 				</button>
 			</div>
-
 			{error && (
-				<div className="sm:col-span-2 alert alert-error text-base py-3">
+				<div className="sm:col-span-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg px-4 py-3">
 					{error}
 				</div>
 			)}
 			{success && (
-				<div className="sm:col-span-2 alert alert-success text-base py-3">
+				<div className="sm:col-span-2 text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-lg px-4 py-3">
 					User added successfully.
 				</div>
 			)}
