@@ -135,8 +135,12 @@ async function loadGoogleFont(url: string, familyName: string): Promise<void> {
 		document.head.appendChild(link);
 	}
 
-	// Block until the font is actually usable by the browser
-	await document.fonts.load(`400 16px "${familyName}"`);
+	// Block until the font is actually usable by the browser.
+	// Race against a 4s timeout — document.fonts.load() can hang on slow mobile connections.
+	await Promise.race([
+		document.fonts.load(`400 16px "${familyName}"`),
+		new Promise<void>(resolve => setTimeout(resolve, 4000)),
+	]);
 	readyUrls.add(url);
 
 	// Cache CSS + binary font files in the background (don't block the caller)
@@ -240,7 +244,10 @@ export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, on
 	const isDark = document.documentElement.classList.contains('dark');
 
 	return (
-		<div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-2 print:hidden">
+		<div
+			className="fixed right-4 sm:right-6 z-30 flex flex-col items-end gap-2 print:hidden"
+			style={{ bottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))' }}
+		>
 
 			{/* ── Panel ──────────────────────────────────────────────────────── */}
 			<div
@@ -251,7 +258,7 @@ export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, on
 						: 'opacity-0 scale-95 pointer-events-none',
 				].join(' ')}
 			>
-				<div className="w-72 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
+				<div className="w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
 
 					{/* Header */}
 					<div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">

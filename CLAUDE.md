@@ -87,7 +87,7 @@ dashboard/src/app/page.tsx        — server component, queries all tables + ses
 dashboard/src/components/IntelViewer.tsx — client UI (sidebar, feed, briefing, auth footer; no email toggle)
 dashboard/src/components/CustomizationPanel.tsx — floating FAB: font/size/spacing/width/accent/email (client-only, ssr:false)
 dashboard/src/app/actions.ts      — server actions (preserve/delete article & cluster; setMyEmailEnabled; logout)
-dashboard/src/app/layout.tsx      — inline script in <head>: dark-mode + reading prefs (beforeInteractive — no FOUC)
+dashboard/src/app/layout.tsx      — inline script in <head>: dark-mode + reading prefs (beforeInteractive — no FOUC); exports `viewport` with `viewportFit: 'cover'` for iOS safe-area support
 dashboard/src/app/globals.css     — accent color system (--ui-accent, .text-accent, .bg-accent) + reading CSS vars
 dashboard/src/db/schema.ts        — Drizzle ORM schema (all tables)
 dashboard/src/lib/auth.ts         — session helpers: getSession, requireAuth, createSession, deleteSession
@@ -104,7 +104,7 @@ dashboard/src/components/ThemeToggle.tsx — shared dark/light/system toggle; us
 - **Archive (Preserved)** — bookmarked articles, exempt from 30-day cleanup.
 - **Search** — sidebar search across all dates.
 - **Dark mode** — persisted in `localStorage`. Inline `<Script strategy="beforeInteractive">` in layout.tsx adds `dark` class to `<html>` before first paint — no flash on refresh.
-- **Customization panel** — floating FAB (bottom-right). Collapsed by default; auto-hides on article drawer open or scroll. Contains: font family (10 options, Google Fonts loaded on demand with loading spinner + button lock), font size, line spacing, reading width, accent color (5 presets). Email toggle also lives here — visible to signed-in users only. All prefs stored in `localStorage` key `intel-reading-prefs-v1`; size/spacing/width/accent applied before first paint via the `beforeInteractive` inline script.
+- **Customization panel** — floating FAB (bottom-right, iOS safe-area-aware). Collapsed by default; auto-hides on article drawer open or scroll. Contains: font family (10 options, Google Fonts loaded on demand with loading spinner + button lock), font size, line spacing, reading width, accent color (5 presets). Email toggle also lives here — visible to signed-in users only. All prefs stored in `localStorage` key `intel-reading-prefs-v1`; size/spacing/width/accent applied before first paint via the `beforeInteractive` inline script. Panel width is capped at `min(18rem, 100vw-2rem)` for 320px phones. Font loading uses a 4s timeout race so `!ready` never blocks the FAB on slow mobile connections.
 - **GitHub link** — sidebar footer.
 - **Auth footer** — bottom of sidebar shows signed-in user (name + role) with Admin and Sign out links; anonymous users see a Sign in button. Logout redirects to `/` (briefing home).
 - **Admin panel** — pipeline stats (briefings, articles, today's feed, email sub count), source breakdown, user table with read-only email sub status, add/remove users. Dark/light/system theme toggle in header uses same `localStorage` key as main app.

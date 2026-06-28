@@ -14,7 +14,7 @@ export default async function VerifyPage({
 	if (!params.token) redirect('/login');
 
 	return (
-		<main className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-16">
+		<main className="min-h-dvh flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-8 sm:py-16 overflow-y-auto">
 			<div className="w-full max-w-sm">
 				<div className="mb-8 text-center">
 					<p className="text-sm font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-2">
