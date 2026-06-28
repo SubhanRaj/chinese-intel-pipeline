@@ -91,7 +91,8 @@ dashboard/src/db/schema.ts        — Drizzle ORM schema (all tables)
 dashboard/src/lib/auth.ts         — session helpers: getSession, requireAuth, createSession, deleteSession
 dashboard/src/app/login/          — magic-link request page + requestMagicLink server action
 dashboard/src/app/auth/verify/    — magic-link landing page; consumeToken verifies token + sets session cookie
-dashboard/src/app/admin/          — user management panel (admin role only); uses DaisyUI via npm
+dashboard/src/app/admin/          — user management panel (admin role only); plain Tailwind, same tokens as main app
+dashboard/src/components/ThemeToggle.tsx — shared dark/light/system toggle; used on briefing + admin pages
 ```
 
 ## Dashboard features
@@ -112,7 +113,7 @@ dashboard/src/app/admin/          — user management panel (admin role only); u
 
 | Tier | Who | Login method | What they can do |
 |---|---|---|---|
-| Anonymous | Everyone | — | View briefings, feed, archive, toggle dark mode |
+| Anonymous | Everyone | — | View briefings, feed, toggle dark mode |
 | User | Invited user | Magic link (email) | Everything above + preserve articles + toggle own email notifications |
 | Admin | Subhan | Magic link + optional TOTP | Everything above + delete articles/clusters + manage users via `/admin` panel |
 
@@ -153,8 +154,8 @@ dashboard/src/app/admin/          — user management panel (admin role only); u
 - List all users (name, email, role, email sub status — read-only)
 - Add new user: set name, email, role (email sub defaults to on)
 - Remove user (cannot remove self; cannot remove sole admin)
-- Dark/light/system theme toggle — same `localStorage` key as main app
-- UI uses DaisyUI v5 (npm, `corporate` theme) scoped to `/admin` via `admin.css` — does not affect main app styles
+- Dark/light/system theme toggle via shared `ThemeToggle` component — same `localStorage` key as main app
+- UI uses plain Tailwind with same CSS tokens/patterns as main app (no DaisyUI)
 
 ### Future (not in current scope)
 - Public signup flow (multi-user beyond invited accounts)
@@ -175,8 +176,7 @@ dashboard/src/app/admin/          — user management panel (admin role only); u
 - Don't add a 3rd-party auth provider (Clerk, Auth0, etc.) — auth is custom-built using CF primitives and SubtleCrypto.
 - Don't allow mutations (preserve, delete, email toggle) without calling `requireAuth()` — all server actions must check session.
 - Don't set `Max-Age` on admin session cookies — admin sessions must be ephemeral (clear on browser close).
-- Don't load DaisyUI globally — it's scoped to `/admin` via `dashboard/src/app/admin/admin.css` to avoid style conflicts with the main app (which uses shadcn/Tailwind).
-- Don't use the DaisyUI CDN link — DaisyUI is installed via npm (`daisyui` package) and imported as a Tailwind v4 `@plugin`.
+- Don't add DaisyUI back — it was removed entirely (caused dark mode conflicts). Admin page uses plain Tailwind with the same tokens as the rest of the app.
 - Don't add back a global `settings.email_enabled` kill-switch — email is now fully per-user via `users.email_notifications`. The `settings` table is kept but no longer used for email.
 - Don't allow admin to toggle another user's `email_notifications` — only the user themselves can change their own subscription (enforced in `setMyEmailEnabled` via `requireAuth` + session user ID).
 - Don't use `RESEND_TO_EMAIL` — scraper reads recipient list directly from D1 `users` table.

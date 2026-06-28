@@ -247,7 +247,7 @@ All ~33–40 scraped articles grouped by source newspaper, collapsed by default.
 One card per cluster. Multiple articles from different papers → one card with "N sources" badge. Cluster drawer shows each source's own translated title, summary, English translation, 中文 toggle, and source URL.
 
 ### Archive (Preserved)
-Articles bookmarked via the preserve button. Exempt from 30-day cleanup.
+Articles bookmarked via the preserve button. Exempt from 30-day cleanup. Visible to signed-in users only (hidden from anonymous).
 
 ### Search
 Sidebar search. Enter/Search commits query and opens a results page across all dates. Clears back to previous view.
@@ -351,7 +351,7 @@ Daily briefings via **Resend**. Table-based HTML template (inline CSS — requir
 | `key` | TEXT PK | Setting name |
 | `value` | TEXT | Setting value |
 
-Current keys: `email_enabled` (`'0'` = off, `'1'` = on). Toggled from dashboard UI (global; deprecated post-auth migration).
+Current keys: `email_enabled` — deprecated, no longer used. Email is now fully per-user via `users.email_notifications`.
 
 ### `users` — registered accounts (migration 0009 — deployed)
 
@@ -393,13 +393,13 @@ Current keys: `email_enabled` (`'0'` = off, `'1'` = on). Toggled from dashboard 
 
 | Tier | Login | Session | Capabilities |
 |---|---|---|---|
-| **Anonymous** | None | — | View briefings, feed, archive; toggle dark mode |
+| **Anonymous** | None | — | View briefings, feed; toggle dark mode |
 | **User** | Magic link (email) | Persistent cookie (1 year) | + preserve articles; toggle own email notifications |
 | **Admin** | Magic link | Session cookie (clears on browser/tab close) | + delete articles/clusters; manage users via `/admin` panel |
 
 **Magic link flow (passwordless):** Enter email on `/login` → server checks `users` table → Resend delivers a one-time login URL (15-min expiry, single-use, token hash stored in D1) → click link → session cookie set → redirect to `/`.
 
-**Admin panel (`/admin`):** Pipeline stats (briefings, articles, email sub count), source breakdown, user list with read-only email sub status (users control their own), add/remove users, dark/light theme toggle. Built with DaisyUI v5 (npm, `corporate` theme, scoped to `/admin` only).
+**Admin panel (`/admin`):** Pipeline stats (briefings, articles, email sub count), source breakdown, user list with read-only email sub status (users control their own), add/remove users, dark/light/system theme toggle. Plain Tailwind — same CSS tokens and patterns as main app.
 
 **Scraper protection (not yet enabled):** HTTP trigger will require `Authorization: Bearer <SCRAPER_SECRET>`. Cron trigger is already protected by CF scheduler. `SCRAPER_SECRET` secret not yet set.
 
@@ -451,25 +451,26 @@ chinese-intel-pipeline/
 │   │   │   ├── clusterArticlesWithAI()  Pass 2 — cross-source story grouping (input sliced at 12k chars)
 │   │   │   ├── sendEmail()              Resend + table-layout HTML (mobile Gmail safe)
 │   │   │   └── runPipeline()            Orchestrator; isCron flag controls idempotency depth
-│   │   └── db/schema.ts                 Drizzle ORM schema (temp_articles, intel_*, settings)
+│   │   └── db/schema.ts                 Drizzle ORM schema (temp_articles, intel_*, users)
 │   └── wrangler.jsonc                   AI + D1 bindings; cron 30 1 * * * (no BROWSER binding)
 └── dashboard/
     ├── public/
     │   └── favicon.svg
     ├── src/
     │   ├── app/
-    │   │   ├── actions.ts               Server actions: preserve/delete/logout; setEmailEnabled
+    │   │   ├── actions.ts               Server actions: preserve/delete/logout; setMyEmailEnabled
     │   │   ├── layout.tsx               Metadata, fonts, inline dark-mode script (beforeInteractive — no FOUC)
     │   │   ├── page.tsx                 Server component — queries all tables + active session
-    │   │   ├── globals.css              Tailwind v4 + Shadcn CSS tokens
+    │   │   ├── globals.css              Tailwind v4 + @custom-variant dark (&:is(.dark, .dark *))
     │   │   ├── login/                   Magic-link request page + requestMagicLink server action
     │   │   ├── auth/verify/             Magic-link landing page; consumeToken → session cookie
-    │   │   └── admin/                   User mgmt panel (DaisyUI corporate theme, npm-scoped)
-    │   │                                list/add/remove users; roles; email notification toggles
+    │   │   └── admin/                   User mgmt panel (plain Tailwind, same tokens as main app)
+    │   │                                list/add/remove users; roles; read-only email sub status
     │   ├── components/
-    │   │   ├── IntelViewer.tsx          Client: sidebar (dark toggle, email toggle, auth footer, GitHub),
+    │   │   ├── IntelViewer.tsx          Client: sidebar (email toggle, auth footer, GitHub),
     │   │   │                                    Today's Feed (collapsible by source),
     │   │   │                                    Intel Briefing, ClusterCard, ClusterDrawer, search
+    │   │   ├── ThemeToggle.tsx          Shared dark/light/system toggle; works across briefing + admin
     │   │   ├── MarkdownRenderer.tsx     Legacy briefings (react-markdown, ssr:false)
     │   │   └── ui/                      Shadcn primitives
     │   ├── lib/
