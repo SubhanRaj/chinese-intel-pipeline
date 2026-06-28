@@ -32,7 +32,8 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { togglePreserve, deleteArticle, unpreserveAndDelete, togglePreserveCluster, deleteCluster, setEmailEnabled } from '@/app/actions';
+import { togglePreserve, deleteArticle, unpreserveAndDelete, togglePreserveCluster, deleteCluster, setEmailEnabled, logout } from '@/app/actions';
+import Link from 'next/link';
 import { safeUrl } from '@/lib/utils';
 import type { IntelBriefing, IntelArticle, IntelCluster, TempArticle } from '@/db/schema';
 
@@ -61,6 +62,8 @@ interface Props {
 	clusters: IntelCluster[];
 	feed: TempArticle[];
 	emailEnabled: boolean;
+	userRole: 'admin' | 'user' | null;
+	userName: string | null;
 }
 
 type View = 'briefing' | 'preserved' | 'feed' | 'search';
@@ -72,7 +75,9 @@ interface DrawerState {
 	articles: IntelArticle[];
 }
 
-export default function IntelViewer({ briefings, articles, clusters, feed, emailEnabled }: Props) {
+export default function IntelViewer({ briefings, articles, clusters, feed, emailEnabled, userRole, userName }: Props) {
+	const canPreserve = userRole !== null;
+	const canDelete = userRole === 'admin';
 	const defaultBriefingId = briefings.length > 0 ? briefings[0].id : null;
 
 	const [selectedId, setSelectedId] = useState<number | null>(defaultBriefingId);
@@ -425,28 +430,30 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 					</div>
 				)}
 
-				{/* ── Email toggle ── */}
-				<div className="shrink-0 px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between">
-					<span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-widest">Daily email</span>
-					<button
-						onClick={async () => {
-							const next = !emailOn;
-							setEmailOn(next);
-							await setEmailEnabled(next);
-						}}
-						className={[
-							'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none',
-							emailOn ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
-						].join(' ')}
-						aria-label={emailOn ? 'Disable daily email' : 'Enable daily email'}
-						title={emailOn ? 'Daily email ON — click to disable' : 'Daily email OFF — click to enable'}
-					>
-						<span className={[
-							'inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform',
-							emailOn ? 'translate-x-4' : 'translate-x-1',
-						].join(' ')} />
-					</button>
-				</div>
+				{/* ── Email toggle — admin only ── */}
+				{userRole === 'admin' && (
+					<div className="shrink-0 px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between">
+						<span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-widest">Daily email</span>
+						<button
+							onClick={async () => {
+								const next = !emailOn;
+								setEmailOn(next);
+								await setEmailEnabled(next);
+							}}
+							className={[
+								'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none',
+								emailOn ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
+							].join(' ')}
+							aria-label={emailOn ? 'Disable daily email' : 'Enable daily email'}
+							title={emailOn ? 'Daily email ON — click to disable' : 'Daily email OFF — click to enable'}
+						>
+							<span className={[
+								'inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform',
+								emailOn ? 'translate-x-4' : 'translate-x-1',
+							].join(' ')} />
+						</button>
+					</div>
+				)}
 
 				<div className="shrink-0 px-3 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
 					<form onSubmit={e => { e.preventDefault(); commitSearch(searchInput); closeSidebarMobile(); }}>
@@ -491,6 +498,55 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 							<IconBrandGithub size={13} />
 							<span>GitHub</span>
 						</a>
+					</div>
+
+					{/* ── Auth footer ── */}
+					<div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between px-1">
+						{userRole ? (
+							<>
+								<div className="flex items-center gap-2 min-w-0">
+									<div className="w-6 h-6 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+										<span className="text-[10px] font-bold text-red-600 dark:text-red-400">
+											{userName?.charAt(0).toUpperCase() ?? '?'}
+										</span>
+									</div>
+									<div className="min-w-0">
+										<p className="text-[11px] font-medium text-slate-700 dark:text-slate-300 truncate">{userName}</p>
+										<p className="text-[10px] text-slate-400 dark:text-slate-600 capitalize">{userRole}</p>
+									</div>
+								</div>
+								<div className="flex items-center gap-1 shrink-0">
+									{userRole === 'admin' && (
+										<Link
+											href="/admin"
+											className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors px-1"
+											title="Admin panel"
+										>
+											Admin
+										</Link>
+									)}
+									<form action={logout}>
+										<button
+											type="submit"
+											className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+											title="Sign out"
+										>
+											Sign out
+										</button>
+									</form>
+								</div>
+							</>
+						) : (
+							<>
+								<p className="text-[11px] text-slate-400 dark:text-slate-500">Read-only · Sign in to save articles</p>
+								<Link
+									href="/login"
+									className="text-[11px] font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+								>
+									Sign in
+								</Link>
+							</>
+						)}
 					</div>
 				</div>
 			</aside>
@@ -613,8 +669,8 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 															cluster={cluster}
 															clusterArticles={clusterArticles}
 															onOpen={() => setDrawer({ cluster, articles: clusterArticles })}
-															onPreserveAll={ids => startTransition(() => togglePreserveCluster(ids, clusterArticles.every(a => !!a.isPreserved)))}
-															onDeleteAll={ids => startTransition(() => deleteCluster(ids))}
+															onPreserveAll={canPreserve ? ids => startTransition(() => togglePreserveCluster(ids, clusterArticles.every(a => !!a.isPreserved))) : undefined}
+															onDeleteAll={canDelete ? ids => startTransition(() => deleteCluster(ids)) : undefined}
 														/>
 													))}
 												</div>
@@ -653,8 +709,8 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 											key={a.id}
 											article={a}
 											showDate
-											onPreserve={(id, cur) => startTransition(() => togglePreserve(id, cur))}
-											onDelete={id => startTransition(() => deleteArticle(id))}
+											onPreserve={canPreserve ? (id, cur) => startTransition(() => togglePreserve(id, cur)) : undefined}
+											onDelete={canDelete ? id => startTransition(() => deleteArticle(id)) : undefined}
 											onReadFull={a => setPreservedDrawer(a)}
 										/>
 									))}
@@ -838,8 +894,8 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 													cluster={cluster}
 													clusterArticles={clusterArticles}
 													onOpen={() => setDrawer({ cluster, articles: clusterArticles })}
-													onPreserveAll={ids => startTransition(() => togglePreserveCluster(ids, clusterArticles.every(a => !!a.isPreserved)))}
-													onDeleteAll={ids => startTransition(() => deleteCluster(ids))}
+													onPreserveAll={canPreserve ? ids => startTransition(() => togglePreserveCluster(ids, clusterArticles.every(a => !!a.isPreserved))) : undefined}
+													onDeleteAll={canDelete ? ids => startTransition(() => deleteCluster(ids)) : undefined}
 												/>
 											))}
 										</div>
@@ -870,35 +926,35 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 			<ClusterDrawer
 				state={drawer}
 				onClose={() => setDrawer(null)}
-				onPreserveAll={(ids, cur) => {
+				onPreserveAll={canPreserve ? (ids, cur) => {
 					startTransition(() => togglePreserveCluster(ids, cur));
 					setDrawer(prev => prev ? {
 						...prev,
 						articles: prev.articles.map(a => ({ ...a, isPreserved: cur ? 0 : 1 })),
 					} : null);
-				}}
-				onDeleteAll={ids => {
+				} : undefined}
+				onDeleteAll={canDelete ? ids => {
 					startTransition(() => deleteCluster(ids));
 					setDrawer(null);
-				}}
-				onUnpreserveAndDelete={id => {
+				} : undefined}
+				onUnpreserveAndDelete={canDelete ? id => {
 					startTransition(() => unpreserveAndDelete(id));
 					setDrawer(prev => prev ? { ...prev, articles: prev.articles.filter(a => a.id !== id) } : null);
-				}}
+				} : undefined}
 			/>
 
 			{/* Article drawer — preserved view (single article) */}
 			<ArticleDrawer
 				article={preservedDrawer}
 				onClose={() => setPreservedDrawer(null)}
-				onPreserve={(id, cur) => {
+				onPreserve={canPreserve ? (id, cur) => {
 					startTransition(() => togglePreserve(id, cur));
 					setPreservedDrawer(prev => prev ? { ...prev, isPreserved: cur ? 0 : 1 } : null);
-				}}
-				onUnpreserveAndDelete={id => {
+				} : undefined}
+				onUnpreserveAndDelete={canDelete ? id => {
 					startTransition(() => unpreserveAndDelete(id));
 					setPreservedDrawer(null);
-				}}
+				} : undefined}
 			/>
 		</div>
 	);
@@ -910,8 +966,8 @@ interface ClusterCardProps {
 	cluster: IntelCluster;
 	clusterArticles: IntelArticle[];
 	onOpen: () => void;
-	onPreserveAll: (ids: number[]) => void;
-	onDeleteAll: (ids: number[]) => void;
+	onPreserveAll?: (ids: number[]) => void;
+	onDeleteAll?: (ids: number[]) => void;
 }
 
 function ClusterCard({ cluster, clusterArticles, onOpen, onPreserveAll, onDeleteAll }: ClusterCardProps) {
@@ -970,38 +1026,42 @@ function ClusterCard({ cluster, clusterArticles, onOpen, onPreserveAll, onDelete
 					</button>
 
 					<div className="flex items-center gap-0.5 print:hidden">
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => onPreserveAll(ids)}
-							className={[
-								'h-8 px-2 sm:px-3 text-sm gap-1.5',
-								anyPreserved
-									? 'text-amber-600 dark:text-amber-400'
-									: 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400',
-							].join(' ')}
-							title={allPreserved ? 'Unpreserve all' : 'Preserve all'}
-						>
-							{anyPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
-							<span className="hidden sm:inline">{allPreserved ? 'Preserved' : anyPreserved ? 'Partial' : 'Preserve'}</span>
-						</Button>
+						{onPreserveAll && (
+							<Button
+								variant="ghost"
+								size="sm"
+								onClick={() => onPreserveAll(ids)}
+								className={[
+									'h-8 px-2 sm:px-3 text-sm gap-1.5',
+									anyPreserved
+										? 'text-amber-600 dark:text-amber-400'
+										: 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400',
+								].join(' ')}
+								title={allPreserved ? 'Unpreserve all' : 'Preserve all'}
+							>
+								{anyPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
+								<span className="hidden sm:inline">{allPreserved ? 'Preserved' : anyPreserved ? 'Partial' : 'Preserve'}</span>
+							</Button>
+						)}
 
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => !anyPreserved && onDeleteAll(ids)}
-							disabled={anyPreserved}
-							className={[
-								'h-8 px-2 sm:px-3 text-sm gap-1.5',
-								anyPreserved
-									? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
-									: 'text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400',
-							].join(' ')}
-							title={anyPreserved ? 'Unpreserve before deleting' : 'Delete'}
-						>
-							{anyPreserved ? <IconLock size={15} /> : <IconTrash size={15} />}
-							<span className="hidden sm:inline">{anyPreserved ? 'Locked' : 'Delete'}</span>
-						</Button>
+						{onDeleteAll && (
+							<Button
+								variant="ghost"
+								size="sm"
+								onClick={() => !anyPreserved && onDeleteAll!(ids)}
+								disabled={anyPreserved}
+								className={[
+									'h-8 px-2 sm:px-3 text-sm gap-1.5',
+									anyPreserved
+										? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
+										: 'text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400',
+								].join(' ')}
+								title={anyPreserved ? 'Unpreserve before deleting' : 'Delete'}
+							>
+								{anyPreserved ? <IconLock size={15} /> : <IconTrash size={15} />}
+								<span className="hidden sm:inline">{anyPreserved ? 'Locked' : 'Delete'}</span>
+							</Button>
+						)}
 					</div>
 				</div>
 			</CardContent>
@@ -1014,9 +1074,9 @@ function ClusterCard({ cluster, clusterArticles, onOpen, onPreserveAll, onDelete
 interface ClusterDrawerProps {
 	state: DrawerState | null;
 	onClose: () => void;
-	onPreserveAll: (ids: number[], currentlyPreserved: boolean) => void;
-	onDeleteAll: (ids: number[]) => void;
-	onUnpreserveAndDelete: (id: number) => void;
+	onPreserveAll?: (ids: number[], currentlyPreserved: boolean) => void;
+	onDeleteAll?: (ids: number[]) => void;
+	onUnpreserveAndDelete?: (id: number) => void;
 }
 
 function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserveAndDelete }: ClusterDrawerProps) {
@@ -1233,11 +1293,11 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 													</>
 												)}
 
-												{/* Per-article delete (only if not preserved) */}
-												{!article.isPreserved && isMultiSource && (
+												{/* Per-article delete (admin only) */}
+												{onUnpreserveAndDelete && !article.isPreserved && isMultiSource && (
 													<div className="pt-1">
 														<button
-															onClick={() => onUnpreserveAndDelete(article.id)}
+															onClick={() => onUnpreserveAndDelete!(article.id)}
 															className="text-[11px] text-slate-400 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition-colors flex items-center gap-1"
 														>
 															<IconTrash size={11} />
@@ -1255,28 +1315,30 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 				</div>
 
 				{/* Drawer footer */}
-				{cluster && (
+				{cluster && (onPreserveAll || onDeleteAll) && (
 					<div className="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => onPreserveAll(ids, allPreserved)}
-							className={[
-								'gap-2 text-sm',
-								anyPreserved
-									? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
-									: 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400',
-							].join(' ')}
-						>
-							{anyPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
-							{allPreserved ? 'Preserved — click to unpreserve all' : anyPreserved ? 'Preserve remaining' : 'Preserve all'}
-						</Button>
-
-						{!anyPreserved && (
+						{onPreserveAll && (
 							<Button
 								variant="ghost"
 								size="sm"
-								onClick={() => onDeleteAll(ids)}
+								onClick={() => onPreserveAll!(ids, allPreserved)}
+								className={[
+									'gap-2 text-sm',
+									anyPreserved
+										? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
+										: 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400',
+								].join(' ')}
+							>
+								{anyPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
+								{allPreserved ? 'Preserved — click to unpreserve all' : anyPreserved ? 'Preserve remaining' : 'Preserve all'}
+							</Button>
+						)}
+
+						{onDeleteAll && !anyPreserved && (
+							<Button
+								variant="ghost"
+								size="sm"
+								onClick={() => onDeleteAll!(ids)}
 								className="gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
 							>
 								<IconTrash size={15} />
@@ -1295,8 +1357,8 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 interface ArticleCardProps {
 	article: IntelArticle;
 	showDate?: boolean;
-	onPreserve: (id: number, current: number) => void;
-	onDelete: (id: number) => void;
+	onPreserve?: (id: number, current: number) => void;
+	onDelete?: (id: number) => void;
 	onReadFull: (article: IntelArticle) => void;
 }
 
@@ -1353,14 +1415,18 @@ function ArticleCard({ article, showDate, onPreserve, onDelete, onReadFull }: Ar
 						)}
 					</div>
 					<div className="flex items-center gap-0.5 print:hidden">
-						<Button variant="ghost" size="sm" onClick={() => onPreserve(article.id, article.isPreserved ?? 0)} className={['h-8 px-2 sm:px-3 text-sm gap-1.5', article.isPreserved ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400'].join(' ')} title={article.isPreserved ? 'Unpreserve' : 'Preserve'}>
-							{article.isPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
-							<span className="hidden sm:inline">{article.isPreserved ? 'Preserved' : 'Preserve'}</span>
-						</Button>
-						<Button variant="ghost" size="sm" onClick={() => !article.isPreserved && onDelete(article.id)} disabled={!!article.isPreserved} className={['h-8 px-2 sm:px-3 text-sm gap-1.5', article.isPreserved ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400'].join(' ')} title={article.isPreserved ? 'Unpreserve before deleting' : 'Delete'}>
-							{article.isPreserved ? <IconLock size={15} /> : <IconTrash size={15} />}
-							<span className="hidden sm:inline">{article.isPreserved ? 'Locked' : 'Delete'}</span>
-						</Button>
+						{onPreserve && (
+							<Button variant="ghost" size="sm" onClick={() => onPreserve(article.id, article.isPreserved ?? 0)} className={['h-8 px-2 sm:px-3 text-sm gap-1.5', article.isPreserved ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400'].join(' ')} title={article.isPreserved ? 'Unpreserve' : 'Preserve'}>
+								{article.isPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
+								<span className="hidden sm:inline">{article.isPreserved ? 'Preserved' : 'Preserve'}</span>
+							</Button>
+						)}
+						{onDelete && (
+							<Button variant="ghost" size="sm" onClick={() => !article.isPreserved && onDelete!(article.id)} disabled={!!article.isPreserved} className={['h-8 px-2 sm:px-3 text-sm gap-1.5', article.isPreserved ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400'].join(' ')} title={article.isPreserved ? 'Unpreserve before deleting' : 'Delete'}>
+								{article.isPreserved ? <IconLock size={15} /> : <IconTrash size={15} />}
+								<span className="hidden sm:inline">{article.isPreserved ? 'Locked' : 'Delete'}</span>
+							</Button>
+						)}
 					</div>
 				</div>
 			</CardContent>
@@ -1373,8 +1439,8 @@ function ArticleCard({ article, showDate, onPreserve, onDelete, onReadFull }: Ar
 interface ArticleDrawerProps {
 	article: IntelArticle | null;
 	onClose: () => void;
-	onPreserve: (id: number, current: number) => void;
-	onUnpreserveAndDelete: (id: number) => void;
+	onPreserve?: (id: number, current: number) => void;
+	onUnpreserveAndDelete?: (id: number) => void;
 }
 
 function ArticleDrawer({ article, onClose, onPreserve, onUnpreserveAndDelete }: ArticleDrawerProps) {
@@ -1465,16 +1531,20 @@ function ArticleDrawer({ article, onClose, onPreserve, onUnpreserveAndDelete }: 
 					)}
 				</div>
 
-				{article && (
+				{article && (onPreserve || onUnpreserveAndDelete) && (
 					<div className="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-						<Button variant="ghost" size="sm" onClick={() => onPreserve(article.id, article.isPreserved ?? 0)} className={['gap-2 text-sm', article.isPreserved ? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300' : 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400'].join(' ')}>
-							{article.isPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
-							{article.isPreserved ? 'Preserved — click to unpreserve' : 'Preserve'}
-						</Button>
-						<Button variant="ghost" size="sm" onClick={() => onUnpreserveAndDelete(article.id)} className="gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400">
-							<IconTrash size={15} />
-							{article.isPreserved ? 'Unpreserve & Delete' : 'Delete'}
-						</Button>
+						{onPreserve && (
+							<Button variant="ghost" size="sm" onClick={() => onPreserve!(article.id, article.isPreserved ?? 0)} className={['gap-2 text-sm', article.isPreserved ? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300' : 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400'].join(' ')}>
+								{article.isPreserved ? <IconBookmarkFilled size={15} /> : <IconBookmark size={15} />}
+								{article.isPreserved ? 'Preserved — click to unpreserve' : 'Preserve'}
+							</Button>
+						)}
+						{onUnpreserveAndDelete && (
+							<Button variant="ghost" size="sm" onClick={() => onUnpreserveAndDelete!(article.id)} className="gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400">
+								<IconTrash size={15} />
+								{article.isPreserved ? 'Unpreserve & Delete' : 'Delete'}
+							</Button>
+						)}
 					</div>
 				)}
 			</div>

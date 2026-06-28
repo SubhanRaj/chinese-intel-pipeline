@@ -6,6 +6,9 @@ export interface Env {
 	DB: D1Database;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	AI: any;
+	// HTTP trigger protection — set as a CF secret. If set, GET requests must include
+	// "Authorization: Bearer <SCRAPER_SECRET>". Cron triggers bypass this check.
+	SCRAPER_SECRET?: string;
 	// Email — set ENABLE_EMAIL="true" as a Worker secret to activate dispatch.
 	// Default is "false" (set in wrangler.jsonc vars) so no Resend keys are required.
 	ENABLE_EMAIL: string;
@@ -942,8 +945,16 @@ async function runPipeline(env: Env, isCron: boolean): Promise<string> {
 
 export default {
 	// HTTP trigger: fallback mode — skips if today's feed already exists (cron already ran).
+	// Protected by SCRAPER_SECRET bearer token when the secret is configured.
 	// To force a re-run: delete today's temp_articles via wrangler, then curl again.
-	async fetch(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+	async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+		// Bearer token guard — only enforced when SCRAPER_SECRET is set as a CF secret
+		if (env.SCRAPER_SECRET) {
+			const auth = request.headers.get('Authorization') ?? '';
+			if (auth !== `Bearer ${env.SCRAPER_SECRET}`) {
+				return new Response('Unauthorized', { status: 401 });
+			}
+		}
 		try {
 			const result = await runPipeline(env, false);
 			return new Response(result, { status: 200 });
