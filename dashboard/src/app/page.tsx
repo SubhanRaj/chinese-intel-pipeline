@@ -17,7 +17,7 @@ export default async function Home() {
 		db.select().from(intelArticles).orderBy(desc(intelArticles.createdAt)),
 		db.select().from(intelClusters).orderBy(desc(intelClusters.createdAt)),
 		db.select().from(tempArticles).orderBy(desc(tempArticles.createdAt)),
-		env.DB.prepare(`SELECT value FROM settings WHERE key = 'email_enabled'`).first<{ value: string }>(),
+		env.DB.prepare(`SELECT value FROM settings WHERE key = 'email_enabled'`).first() as Promise<{ value: string } | null>,
 		getSession(),
 	]);
 
