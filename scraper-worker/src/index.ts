@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, sql as drizzleSql } from 'drizzle-orm';
-import { intelBriefings, intelArticles, intelClusters, tempArticles, settings } from './db/schema';
+import { intelBriefings, intelArticles, intelClusters, tempArticles, users } from './db/schema';
 
 export interface Env {
 	DB: D1Database;
@@ -9,11 +9,7 @@ export interface Env {
 	// HTTP trigger protection — set as a CF secret. If set, GET requests must include
 	// "Authorization: Bearer <SCRAPER_SECRET>". Cron triggers bypass this check.
 	SCRAPER_SECRET?: string;
-	// Email — set ENABLE_EMAIL="true" as a Worker secret to activate dispatch.
-	// Default is "false" (set in wrangler.jsonc vars) so no Resend keys are required.
-	ENABLE_EMAIL: string;
 	RESEND_API_KEY: string;
-	RESEND_TO_EMAIL: string;
 	RESEND_FROM_EMAIL: string;
 }
 
@@ -614,7 +610,7 @@ const DASHBOARD_URL = 'https://dashboard.shubhanraj2002.workers.dev';
 async function sendEmail(
 	resendApiKey: string,
 	from: string,
-	to: string,
+	to: string | string[],
 	date: string,
 	articles: AiArticle[],
 ): Promise<void> {
@@ -706,7 +702,7 @@ async function sendEmail(
 		headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			from,
-			to: [to],
+			to: Array.isArray(to) ? to : [to],
 			subject: `China Intel Briefing — ${date}`,
 			html: htmlContent,
 		}),
@@ -912,15 +908,16 @@ async function runPipeline(env: Env, isCron: boolean): Promise<string> {
 	} catch { /* non-fatal */ }
 
 	// ── Step 7: Email ─────────────────────────────────────────────────────────
-	// Read email_enabled from D1 settings (togglable from dashboard UI)
+	// Send to all users who have email_notifications = 1 in the users table.
 	try {
-		const emailSetting = await env.DB
-			.prepare(`SELECT value FROM settings WHERE key = 'email_enabled'`)
-			.first<{ value: string }>();
-		const emailEnabled = emailSetting?.value === '1';
+		const recipients = await db
+			.select({ email: users.email })
+			.from(users)
+			.where(eq(users.emailNotifications, 1));
 
-		if (emailEnabled) {
-			console.log('[PIPELINE] Email enabled — sending via Resend…');
+		if (recipients.length > 0) {
+			const toList = recipients.map(r => r.email);
+			console.log(`[PIPELINE] Sending email to ${toList.length} recipient(s)…`);
 			const emailArticles: AiArticle[] = clusters.map(c => ({
 				title: c.title,
 				summary: c.summary,
@@ -928,11 +925,11 @@ async function runPipeline(env: Env, isCron: boolean): Promise<string> {
 				url: aiArticles[c.article_indices[0]]?.url ?? '',
 				category: c.category,
 			}));
-			await sendEmail(env.RESEND_API_KEY, env.RESEND_FROM_EMAIL, env.RESEND_TO_EMAIL, trackingDate, emailArticles);
+			await sendEmail(env.RESEND_API_KEY, env.RESEND_FROM_EMAIL, toList, trackingDate, emailArticles);
 			await db.update(intelBriefings).set({ emailStatus: 1 }).where(eq(intelBriefings.trackingDate, trackingDate));
 			console.log('[PIPELINE] Email sent successfully.');
 		} else {
-			console.log('[PIPELINE] Email disabled (settings.email_enabled = 0).');
+			console.log('[PIPELINE] No users with email notifications enabled — skipping email.');
 		}
 	} catch (emailErr) {
 		console.error('[PIPELINE] Email step failed (briefing already saved):', emailErr);

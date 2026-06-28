@@ -61,5 +61,14 @@ export const settings = sqliteTable('settings', {
 	value: text('value').notNull(),
 });
 
+export const users = sqliteTable('users', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	email: text('email').unique().notNull(),
+	name: text('name').notNull(),
+	role: text('role').notNull().default('user'),
+	emailNotifications: integer('email_notifications').default(1),
+	createdAt: text('created_at').default(sql`(datetime('now'))`),
+});
+
 export type TempArticle = typeof tempArticles.$inferSelect;
 export type NewTempArticle = typeof tempArticles.$inferInsert;

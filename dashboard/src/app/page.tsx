@@ -1,7 +1,7 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { drizzle } from 'drizzle-orm/d1';
-import { desc } from 'drizzle-orm';
-import { intelBriefings, intelArticles, intelClusters, tempArticles } from '@/db/schema';
+import { desc, eq } from 'drizzle-orm';
+import { intelBriefings, intelArticles, intelClusters, tempArticles, users } from '@/db/schema';
 import IntelViewer from '@/components/IntelViewer';
 import { getSession } from '@/lib/auth';
 
@@ -12,16 +12,21 @@ export default async function Home() {
 	const { env } = await getCloudflareContext({ async: true }) as { env: any };
 	const db = drizzle(env.DB);
 
-	const [briefings, articles, clusters, feed, emailRow, session] = await Promise.all([
+	const [briefings, articles, clusters, feed, session] = await Promise.all([
 		db.select().from(intelBriefings).orderBy(desc(intelBriefings.trackingDate)),
 		db.select().from(intelArticles).orderBy(desc(intelArticles.createdAt)),
 		db.select().from(intelClusters).orderBy(desc(intelClusters.createdAt)),
 		db.select().from(tempArticles).orderBy(desc(tempArticles.createdAt)),
-		env.DB.prepare(`SELECT value FROM settings WHERE key = 'email_enabled'`).first() as Promise<{ value: string } | null>,
 		getSession(),
 	]);
 
-	const emailEnabled = emailRow?.value === '1';
+	// Email enabled = this user's per-user preference (null/false for anonymous)
+	let emailEnabled = false;
+	if (session) {
+		const userRow = await db.select({ emailNotifications: users.emailNotifications })
+			.from(users).where(eq(users.id, session.id)).limit(1);
+		emailEnabled = (userRow[0]?.emailNotifications ?? 0) === 1;
+	}
 
 	return (
 		<IntelViewer

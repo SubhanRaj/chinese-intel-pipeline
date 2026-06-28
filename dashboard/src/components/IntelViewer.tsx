@@ -32,7 +32,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { togglePreserve, deleteArticle, unpreserveAndDelete, togglePreserveCluster, deleteCluster, setEmailEnabled, logout } from '@/app/actions';
+import { togglePreserve, deleteArticle, unpreserveAndDelete, togglePreserveCluster, deleteCluster, setMyEmailEnabled, logout } from '@/app/actions';
 import Link from 'next/link';
 import { safeUrl } from '@/lib/utils';
 import type { IntelBriefing, IntelArticle, IntelCluster, TempArticle } from '@/db/schema';
@@ -430,22 +430,22 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 					</div>
 				)}
 
-				{/* ── Email toggle — admin only ── */}
-				{userRole === 'admin' && (
+				{/* ── Email toggle — any signed-in user ── */}
+				{userRole && (
 					<div className="shrink-0 px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between">
-						<span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-widest">Daily email</span>
+						<span className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-widest">Daily email</span>
 						<button
 							onClick={async () => {
 								const next = !emailOn;
 								setEmailOn(next);
-								await setEmailEnabled(next);
+								await setMyEmailEnabled(next);
 							}}
 							className={[
 								'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none',
 								emailOn ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
 							].join(' ')}
 							aria-label={emailOn ? 'Disable daily email' : 'Enable daily email'}
-							title={emailOn ? 'Daily email ON — click to disable' : 'Daily email OFF — click to enable'}
+							title={emailOn ? 'Daily briefing emails ON — click to unsubscribe' : 'Daily briefing emails OFF — click to subscribe'}
 						>
 							<span className={[
 								'inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform',

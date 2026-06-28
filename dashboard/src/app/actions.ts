@@ -3,10 +3,12 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
+
 import { intelArticles, settings } from '@/db/schema';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireAuth, deleteSession } from '@/lib/auth';
+import { users } from '@/db/schema';
 
 export async function logout(): Promise<void> {
 	await deleteSession();
@@ -62,13 +64,11 @@ export async function deleteCluster(ids: number[]) {
 	revalidatePath('/');
 }
 
-export async function setEmailEnabled(enabled: boolean) {
-	await requireAuth('admin');
+export async function setMyEmailEnabled(enabled: boolean) {
+	const session = await requireAuth('user');
 	const { env } = await getCloudflareContext({ async: true });
-	await env.DB
-		.prepare("INSERT INTO settings (key, value) VALUES ('email_enabled', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-		.bind(enabled ? '1' : '0')
-		.run();
+	const db = drizzle(env.DB);
+	await db.update(users).set({ emailNotifications: enabled ? 1 : 0 }).where(eq(users.id, session.id));
 	revalidatePath('/');
 }
 
