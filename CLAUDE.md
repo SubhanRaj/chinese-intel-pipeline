@@ -82,16 +82,16 @@ Both passes use `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Never downgrade to a
 ```
 scraper-worker/src/index.ts       — all pipeline logic (scraping, AI, storage, email)
 scraper-worker/wrangler.jsonc     — bindings (D1, AI), cron 30 1 * * * (no BROWSER binding)
-scraper-worker/migrations/        — D1 schema migrations 0001–0008 (0009 auth — pending)
+scraper-worker/migrations/        — D1 schema migrations 0001–0009 (0009 auth — deployed)
 dashboard/src/app/page.tsx        — server component, queries all tables + session
-dashboard/src/components/IntelViewer.tsx — all client UI (sidebar, feed, briefing, email toggle, GitHub link)
-dashboard/src/app/actions.ts      — server actions (preserve/delete article & cluster; setEmailEnabled)
+dashboard/src/components/IntelViewer.tsx — all client UI (sidebar, feed, briefing, email toggle, auth footer)
+dashboard/src/app/actions.ts      — server actions (preserve/delete article & cluster; setEmailEnabled; logout)
 dashboard/src/app/layout.tsx      — inline dark-mode script in <head> (beforeInteractive — no FOUC)
 dashboard/src/db/schema.ts        — Drizzle ORM schema (all tables)
-dashboard/src/lib/auth.ts         — (planned) session helpers: getSession, requireAuth, createSession
-dashboard/src/app/login/          — (planned) magic-link request page + requestMagicLink server action
-dashboard/src/app/auth/verify/    — (planned) magic-link landing page + TOTP challenge for admin
-dashboard/src/app/admin/          — (planned) user management panel (admin role only)
+dashboard/src/lib/auth.ts         — session helpers: getSession, requireAuth, createSession, deleteSession
+dashboard/src/app/login/          — magic-link request page + requestMagicLink server action
+dashboard/src/app/auth/verify/    — magic-link landing page; consumeToken verifies token + sets session cookie
+dashboard/src/app/admin/          — user management panel (admin role only); uses DaisyUI via npm
 ```
 
 ## Dashboard features
@@ -103,8 +103,9 @@ dashboard/src/app/admin/          — (planned) user management panel (admin rol
 - **Dark mode** — persisted in `localStorage`. Inline `<Script strategy="beforeInteractive">` in layout.tsx adds `dark` class to `<html>` before first paint — no flash on refresh.
 - **Email toggle** — on/off switch in sidebar. Writes to D1 `settings` table. Email address stays in CF secrets.
 - **GitHub link** — sidebar footer.
+- **Auth footer** — bottom of sidebar shows signed-in user (name + role) with Admin and Sign out links; anonymous users see a Sign in button. Logout redirects to `/` (briefing home).
 
-## Auth & Security (planned — migration 0009)
+## Auth & Security (migration 0009 — deployed)
 
 ### Access tiers
 
@@ -134,22 +135,22 @@ dashboard/src/app/admin/          — (planned) user management panel (admin rol
 - Cron trigger: bypasses check (internal, already protected by CF)
 - `curl` invocations updated to: `curl -H "Authorization: Bearer $SCRAPER_SECRET" <url>`
 
-### New secrets needed (not yet set)
-- Dashboard worker: `SESSION_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
-- Scraper worker: `SCRAPER_SECRET`
+### Secrets status
+- Dashboard worker: `SESSION_SECRET` ✓, `RESEND_API_KEY` ✓, `RESEND_FROM_EMAIL` ✓ (`onboarding@resend.dev`)
+- Scraper worker: `RESEND_API_KEY` ✓, `RESEND_TO_EMAIL` ✓, `RESEND_FROM_EMAIL` ✓ — `SCRAPER_SECRET` not yet set (GET trigger is unprotected)
 
 ### Email subscriptions (post-auth)
 - Currently: global `settings.email_enabled` toggle, single `RESEND_TO_EMAIL` recipient
 - After auth: scraper queries `users WHERE email_notifications = 1`, sends to each address
 - `RESEND_TO_EMAIL` secret deprecated once migration is deployed and users are seeded
 
-### Admin panel capabilities (planned)
+### Admin panel capabilities (live at `/admin`)
 - List all users (name, email, role, email notification toggle)
 - Add new user: set name, email, role
-- Remove user
+- Remove user (cannot remove self)
 - Toggle any user's email notifications on/off
-- Add/change receiver email per user (no need to touch CF dashboard or redeploy)
-- Global email kill-switch (replaces `settings.email_enabled`)
+- Global email kill-switch (`settings.email_enabled` toggle in sidebar)
+- UI uses DaisyUI v5 (npm, `corporate` theme) scoped to `/admin` via `admin.css` — does not affect main app styles
 
 ### Future (not in current scope)
 - Public signup flow (multi-user beyond invited accounts)
@@ -170,6 +171,8 @@ dashboard/src/app/admin/          — (planned) user management panel (admin rol
 - Don't add a 3rd-party auth provider (Clerk, Auth0, etc.) — auth is custom-built using CF primitives and SubtleCrypto.
 - Don't allow mutations (preserve, delete, email toggle) without calling `requireAuth()` — all server actions must check session.
 - Don't set `Max-Age` on admin session cookies — admin sessions must be ephemeral (clear on browser close).
+- Don't load DaisyUI globally — it's scoped to `/admin` via `dashboard/src/app/admin/admin.css` to avoid style conflicts with the main app (which uses shadcn/Tailwind).
+- Don't use the DaisyUI CDN link — DaisyUI is installed via npm (`daisyui` package) and imported as a Tailwind v4 `@plugin`.
 
 ## Deploy commands
 

@@ -10,7 +10,7 @@ import { requireAuth, deleteSession } from '@/lib/auth';
 
 export async function logout(): Promise<void> {
 	await deleteSession();
-	redirect('/login');
+	redirect('/');
 }
 
 function validId(id: unknown): id is number {

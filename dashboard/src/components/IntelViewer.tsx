@@ -485,17 +485,17 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 						</div>
 					</form>
 					<div className="flex items-center justify-between mt-1.5 px-1">
-						<p className="text-[11px] text-slate-400 dark:text-slate-600">
+						<p className="text-xs text-slate-400 dark:text-slate-600">
 							{briefings.length} briefing{briefings.length !== 1 ? 's' : ''} on record{searchQuery ? ` · searching "${searchQuery}"` : ''}
 						</p>
 						<a
 							href="https://github.com/SubhanRaj/chinese-intel-pipeline"
 							target="_blank"
 							rel="noopener noreferrer"
-							className="flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+							className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
 							title="View on GitHub"
 						>
-							<IconBrandGithub size={13} />
+							<IconBrandGithub size={14} />
 							<span>GitHub</span>
 						</a>
 					</div>
@@ -505,21 +505,21 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 						{userRole ? (
 							<>
 								<div className="flex items-center gap-2 min-w-0">
-									<div className="w-6 h-6 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
-										<span className="text-[10px] font-bold text-red-600 dark:text-red-400">
+									<div className="w-7 h-7 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+										<span className="text-xs font-bold text-red-600 dark:text-red-400">
 											{userName?.charAt(0).toUpperCase() ?? '?'}
 										</span>
 									</div>
 									<div className="min-w-0">
-										<p className="text-[11px] font-medium text-slate-700 dark:text-slate-300 truncate">{userName}</p>
-										<p className="text-[10px] text-slate-400 dark:text-slate-600 capitalize">{userRole}</p>
+										<p className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">{userName}</p>
+										<p className="text-xs text-slate-400 dark:text-slate-600 capitalize">{userRole}</p>
 									</div>
 								</div>
 								<div className="flex items-center gap-1 shrink-0">
 									{userRole === 'admin' && (
 										<Link
 											href="/admin"
-											className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors px-1"
+											className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors px-1.5 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
 											title="Admin panel"
 										>
 											Admin
@@ -528,7 +528,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 									<form action={logout}>
 										<button
 											type="submit"
-											className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+											className="text-xs text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors px-1.5 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
 											title="Sign out"
 										>
 											Sign out
@@ -538,10 +538,10 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 							</>
 						) : (
 							<>
-								<p className="text-[11px] text-slate-400 dark:text-slate-500">Read-only · Sign in to save articles</p>
+								<p className="text-xs text-slate-400 dark:text-slate-500">Read-only · Sign in to save articles</p>
 								<Link
 									href="/login"
-									className="text-[11px] font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+									className="text-xs font-semibold px-2.5 py-1 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
 								>
 									Sign in
 								</Link>

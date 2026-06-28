@@ -20,32 +20,32 @@ export default async function AdminPage() {
 			<div className="flex items-center justify-between mb-8">
 				<div>
 					<p className="text-sm font-bold tracking-widest uppercase text-red-600 mb-1">Admin Panel</p>
-					<h1 className="text-3xl font-bold text-slate-900">User Management</h1>
-					<p className="text-base text-slate-500 mt-0.5">Signed in as {session!.name} · {session!.email}</p>
+					<h1 className="text-3xl font-bold">User Management</h1>
+					<p className="text-base opacity-60 mt-0.5">Signed in as {session!.name} · {session!.email}</p>
 				</div>
-				<a href="/" className="btn btn-ghost btn-sm">← Dashboard</a>
+				<a href="/" className="btn btn-ghost btn-md">← Dashboard</a>
 			</div>
 
 			{/* Stats */}
 			<div className="stats shadow mb-8 w-full">
 				<div className="stat">
-					<div className="stat-title">Total users</div>
-					<div className="stat-value text-2xl">{allUsers.length}</div>
+					<div className="stat-title text-base">Total users</div>
+					<div className="stat-value">{allUsers.length}</div>
 				</div>
 				<div className="stat">
-					<div className="stat-title">Admins</div>
-					<div className="stat-value text-2xl">{allUsers.filter(u => u.role === 'admin').length}</div>
+					<div className="stat-title text-base">Admins</div>
+					<div className="stat-value">{allUsers.filter(u => u.role === 'admin').length}</div>
 				</div>
 				<div className="stat">
-					<div className="stat-title">Email subs</div>
-					<div className="stat-value text-2xl">{allUsers.filter(u => u.emailNotifications).length}</div>
+					<div className="stat-title text-base">Email subs</div>
+					<div className="stat-value">{allUsers.filter(u => u.emailNotifications).length}</div>
 				</div>
 			</div>
 
 			{/* User table */}
 			<div className="card bg-base-100 shadow mb-8">
 				<div className="card-body p-0">
-					<table className="table table-zebra">
+					<table className="table table-zebra text-base">
 						<thead>
 							<tr>
 								<th>Name</th>
@@ -60,9 +60,9 @@ export default async function AdminPage() {
 							{allUsers.map(u => (
 								<tr key={u.id}>
 									<td className="font-medium">{u.name}</td>
-									<td className="font-mono text-base">{u.email}</td>
+									<td className="font-mono">{u.email}</td>
 									<td>
-										<span className={`badge badge-sm ${u.role === 'admin' ? 'badge-error' : 'badge-ghost'}`}>
+										<span className={`badge badge-md ${u.role === 'admin' ? 'badge-error' : 'badge-ghost'}`}>
 											{u.role}
 										</span>
 									</td>
@@ -70,18 +70,18 @@ export default async function AdminPage() {
 										<form action={toggleUserEmail.bind(null, u.id, u.emailNotifications ?? 0)}>
 											<button
 												type="submit"
-												className={`toggle toggle-sm ${u.emailNotifications ? 'toggle-success' : ''}`}
+												className={`toggle toggle-md ${u.emailNotifications ? 'toggle-success' : ''}`}
 												title={u.emailNotifications ? 'Disable email notifications' : 'Enable email notifications'}
 											/>
 										</form>
 									</td>
-									<td className="text-base text-slate-500 font-mono">
+									<td className="font-mono opacity-60">
 										{u.createdAt ? u.createdAt.slice(0, 10) : '—'}
 									</td>
 									<td>
 										{u.email !== session!.email && (
 											<form action={removeUser.bind(null, u.id)}>
-												<button type="submit" className="btn btn-ghost btn-xs text-error">
+												<button type="submit" className="btn btn-ghost btn-sm text-error">
 													Remove
 												</button>
 											</form>
@@ -97,7 +97,7 @@ export default async function AdminPage() {
 			{/* Add user form */}
 			<div className="card bg-base-100 shadow">
 				<div className="card-body">
-					<h2 className="card-title text-lg mb-2">Add user</h2>
+					<h2 className="card-title text-xl mb-2">Add user</h2>
 					<AddUserForm addUser={addUser} />
 				</div>
 			</div>
