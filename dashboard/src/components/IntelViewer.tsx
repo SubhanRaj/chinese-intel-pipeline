@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
+import { useState, useEffect, useTransition, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import {
 	IconSun,
@@ -1079,6 +1079,17 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 	const [chineseFor, setChineseFor] = useState<number | null>(null);
 	const [localArticles, setLocalArticles] = useState<IntelArticle[]>([]);
 	const open = state !== null;
+	const swipeStartX = useRef(0);
+	const swipeStartY = useRef(0);
+	const onTouchStart = (e: React.TouchEvent) => {
+		swipeStartX.current = e.touches[0].clientX;
+		swipeStartY.current = e.touches[0].clientY;
+	};
+	const onTouchEnd = (e: React.TouchEvent) => {
+		const dx = e.changedTouches[0].clientX - swipeStartX.current;
+		const dy = Math.abs(e.changedTouches[0].clientY - swipeStartY.current);
+		if (dx > 60 && dx > dy * 1.5) onClose();
+	};
 
 	useEffect(() => {
 		setChineseFor(null);
@@ -1104,7 +1115,11 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 				onClick={onClose}
 				className={['fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity duration-300', open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'].join(' ')}
 			/>
-			<div className={['fixed top-0 right-0 z-50 h-full w-full sm:w-[52%] sm:min-w-[480px] bg-white dark:bg-slate-900 shadow-2xl flex flex-col transition-transform duration-300 ease-in-out', open ? 'translate-x-0' : 'translate-x-full'].join(' ')}>
+			<div
+				className={['fixed top-0 right-0 z-50 h-full w-full sm:w-[52%] sm:min-w-[480px] bg-white dark:bg-slate-900 shadow-2xl flex flex-col transition-transform duration-300 ease-in-out', open ? 'translate-x-0' : 'translate-x-full'].join(' ')}
+				onTouchStart={onTouchStart}
+				onTouchEnd={onTouchEnd}
+			>
 
 				{/* Drawer header */}
 				<div className="flex items-center justify-between px-5 sm:px-7 py-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
@@ -1310,6 +1325,17 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 					)}
 				</div>
 
+				{/* Mobile close button — pinned above footer, hidden on sm+ */}
+				<div className="sm:hidden shrink-0 px-5 py-2 border-t border-slate-200 dark:border-slate-800">
+					<button
+						onClick={onClose}
+						className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+					>
+						<IconChevronLeft size={15} />
+						Back
+					</button>
+				</div>
+
 				{/* Drawer footer */}
 				{cluster && (onPreserveAll || onDeleteAll) && (
 					<div className="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
@@ -1443,11 +1469,26 @@ function ArticleDrawer({ article, onClose, onPreserve, onUnpreserveAndDelete }: 
 	const [showChinese, setShowChinese] = useState(false);
 	const open = article !== null;
 	useEffect(() => { setShowChinese(false); }, [article?.id]);
+	const swipeStartX = useRef(0);
+	const swipeStartY = useRef(0);
+	const onTouchStart = (e: React.TouchEvent) => {
+		swipeStartX.current = e.touches[0].clientX;
+		swipeStartY.current = e.touches[0].clientY;
+	};
+	const onTouchEnd = (e: React.TouchEvent) => {
+		const dx = e.changedTouches[0].clientX - swipeStartX.current;
+		const dy = Math.abs(e.changedTouches[0].clientY - swipeStartY.current);
+		if (dx > 60 && dx > dy * 1.5) onClose();
+	};
 
 	return (
 		<>
 			<div onClick={onClose} className={['fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity duration-300', open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'].join(' ')} />
-			<div className={['fixed top-0 right-0 z-50 h-full w-full sm:w-[48%] sm:min-w-[440px] bg-white dark:bg-slate-900 shadow-2xl flex flex-col transition-transform duration-300 ease-in-out', open ? 'translate-x-0' : 'translate-x-full'].join(' ')}>
+			<div
+				className={['fixed top-0 right-0 z-50 h-full w-full sm:w-[48%] sm:min-w-[440px] bg-white dark:bg-slate-900 shadow-2xl flex flex-col transition-transform duration-300 ease-in-out', open ? 'translate-x-0' : 'translate-x-full'].join(' ')}
+				onTouchStart={onTouchStart}
+				onTouchEnd={onTouchEnd}
+			>
 				<div className="flex items-center justify-between px-5 sm:px-7 py-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
 					<div>
 						<div className="flex items-center gap-2 mb-0.5">
@@ -1525,6 +1566,17 @@ function ArticleDrawer({ article, onClose, onPreserve, onUnpreserveAndDelete }: 
 							)}
 						</>
 					)}
+				</div>
+
+				{/* Mobile close button — pinned above footer, hidden on sm+ */}
+				<div className="sm:hidden shrink-0 px-5 py-2 border-t border-slate-200 dark:border-slate-800">
+					<button
+						onClick={onClose}
+						className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+					>
+						<IconChevronLeft size={15} />
+						Back
+					</button>
 				</div>
 
 				{article && (onPreserve || onUnpreserveAndDelete) && (

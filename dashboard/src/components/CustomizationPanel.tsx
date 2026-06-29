@@ -245,7 +245,7 @@ export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, on
 
 	return (
 		<div
-			className="fixed right-4 sm:right-6 z-30 flex flex-col items-end gap-2 print:hidden"
+			className="fixed right-4 sm:right-6 z-30 flex flex-col items-end gap-2 print:hidden pointer-events-none"
 			style={{ bottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))' }}
 		>
 
@@ -255,7 +255,7 @@ export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, on
 					'transition-all duration-200 origin-bottom-right',
 					open
 						? 'opacity-100 scale-100 pointer-events-auto'
-						: 'opacity-0 scale-95 pointer-events-none',
+						: 'opacity-0 scale-95 pointer-events-none select-none',
 				].join(' ')}
 			>
 				<div className="w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
@@ -462,7 +462,7 @@ export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, on
 			<button
 				onClick={() => setOpen(o => !o)}
 				className={[
-					'w-11 h-11 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 border',
+					'pointer-events-auto w-11 h-11 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 border',
 					open
 						? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-transparent shadow-xl'
 						: 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:shadow-xl',
