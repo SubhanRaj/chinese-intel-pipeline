@@ -202,13 +202,14 @@ html[data-rw="wide"]   { --reading-width: 64rem; }
   line-height: var(--reading-lh);
 }
 
-/* Page transition — subtle fade + lift on mount for client-side navigation */
+/* Page transition — clean fade on mount for client-side navigation.
+   No movement: translateY looks like a pop on desktop and a flash on mobile. */
 @keyframes page-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .page-transition {
-  animation: page-in 200ms ease-out both;
+  animation: page-in 250ms ease-in-out both;
 }
 
 /* Warm beige/cream tint on all light-mode surfaces */
