@@ -501,7 +501,11 @@ These are not security vulnerabilities but represent dead surface area that shou
 | 8 | L3 | Silent `SESSION_SECRET` failure | ✅ Fixed 2026-06-28 | `dashboard/src/lib/auth.ts` |
 | 9 | M4 | Session revocation UI | ✅ Fixed 2026-06-28 (revoke button in admin; duration unchanged) | `dashboard/src/app/admin/` |
 | 10 | L5 | Unbounded `name` field length | ✅ Fixed 2026-06-28 | `dashboard/src/app/admin/actions.ts` |
-| — | Stale | Delete `ENABLE_EMAIL`, `RESEND_TO_EMAIL` secrets | ⏳ Manual — delete from CF dashboard (scraper-worker) | CF dashboard |
+| 11 | L2 | `react-markdown` no explicit sanitization | ✅ Fixed 2026-06-28 (covered by M1 — rehype-sanitize added) | `dashboard/src/components/MarkdownRenderer.tsx` |
+| 12 | L4 | Admin page `session!` non-null assertions | ✅ Fixed 2026-06-29 — replaced with `session?.` | `dashboard/src/app/admin/page.tsx` |
+| — | L1 | Magic link token in browser history/logs | ⏳ Open — low priority; 15-min expiry + single-use limits exposure window | `dashboard/src/app/auth/verify/` |
+| — | M3 | D1 database ID in public repo | ⏳ Accepted risk — CF access model makes this hard to exploit; repo is public by design | `wrangler.jsonc` files |
+| — | Stale | Delete `ENABLE_EMAIL`, `RESEND_TO_EMAIL` secrets | ⏳ Manual — delete from CF dashboard → scraper-worker → Settings → Variables | CF dashboard |
 
 Items 1–3 can be fixed in under 5 minutes combined and eliminate the two critical vulnerabilities and a policy violation.
 

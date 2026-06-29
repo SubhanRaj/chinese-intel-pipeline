@@ -69,7 +69,7 @@ export default async function AdminPage() {
 					</div>
 				</div>
 				<p className="text-base text-slate-500 dark:text-slate-400 mt-1">
-					Signed in as {session!.name} · {session!.email}
+					Signed in as {session?.name} · {session?.email}
 				</p>
 			</div>
 
@@ -165,7 +165,7 @@ export default async function AdminPage() {
 													Revoke sessions
 												</button>
 											</form>
-											{u.email !== session!.email && (
+											{u.email !== session?.email && (
 												<form action={removeUser.bind(null, u.id)}>
 													<button
 														type="submit"
