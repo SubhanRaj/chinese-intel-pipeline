@@ -87,8 +87,12 @@ dashboard/src/app/page.tsx        — server component, queries all tables + ses
 dashboard/src/components/IntelViewer.tsx — client UI (sidebar, feed, briefing, auth footer; no email toggle)
 dashboard/src/components/CustomizationPanel.tsx — floating FAB: font/size/spacing/width/accent/email (client-only, ssr:false)
 dashboard/src/app/actions.ts      — server actions (preserve/delete article & cluster; setMyEmailEnabled; logout)
-dashboard/src/app/layout.tsx      — inline script in <head>: dark-mode + reading prefs (beforeInteractive — no FOUC); exports `viewport` with `viewportFit: 'cover'` for iOS safe-area support
+dashboard/src/app/layout.tsx      — inline script in <head>: dark-mode + reading prefs (beforeInteractive — no FOUC); exports `viewport` with `viewportFit: 'cover'` for iOS safe-area support; registers sw.js via lazyOnload
 dashboard/src/app/globals.css     — accent color system (--ui-accent, .text-accent, .bg-accent) + reading CSS vars
+dashboard/public/manifest.json    — PWA manifest: name, icons (32/192/512), display:standalone, theme_color
+dashboard/public/sw.js            — minimal network-first service worker; required for Chrome install prompt; precaches icons
+dashboard/public/icon-192.png     — 192×192 app icon (required by Chrome for PWA install)
+dashboard/public/icon-512.png     — 512×512 app icon (required by Chrome for splash screen; scaled from 192 — replace with proper asset)
 dashboard/src/db/schema.ts        — Drizzle ORM schema (all tables)
 dashboard/src/lib/auth.ts         — session helpers: getSession, requireAuth, createSession, deleteSession
 dashboard/src/app/login/          — magic-link request page + requestMagicLink server action
@@ -106,6 +110,7 @@ dashboard/src/components/ThemeToggle.tsx — shared dark/light/system toggle; us
 - **Dark mode** — persisted in `localStorage`. Inline `<Script strategy="beforeInteractive">` in layout.tsx adds `dark` class to `<html>` before first paint — no flash on refresh.
 - **Customization panel** — floating FAB (bottom-right, iOS safe-area-aware). Collapsed by default; auto-hides on article drawer open or scroll. Contains: font family (10 options, Google Fonts loaded on demand with loading spinner + button lock), font size, line spacing, reading width, accent color (5 presets). Email toggle also lives here — visible to signed-in users only. All prefs stored in `localStorage` key `intel-reading-prefs-v1`; size/spacing/width/accent applied before first paint via the `beforeInteractive` inline script. Panel width is capped at `min(18rem, 100vw-2rem)` for 320px phones. Font loading uses a 4s timeout race so `!ready` never blocks the FAB on slow mobile connections. FAB outer wrapper has `pointer-events-none` so the fixed container never blocks article scroll or drawer touch events when the panel is collapsed.
 - **Article drawer — mobile UX** — both `ClusterDrawer` and `ArticleDrawer` support swipe-right to close on mobile (iOS & Android; intercepts the OS edge-back gesture; threshold: 60px horizontal, ratio 1.5× horizontal:vertical so vertical scroll never triggers it). A sticky "← Back" button is pinned at the bottom of each drawer (`sm:hidden`) so users don't need to scroll back to the header X.
+- **PWA / installable** — meets Chrome's install criteria: `manifest.json` with `display:standalone`, 192×192 + 512×512 icons, and a network-first service worker (`public/sw.js`) with a fetch handler. Chrome shows the install banner after two qualifying visits. iOS Safari uses `appleWebApp` meta + `apple-touch-icon`. `icon-512.png` is currently the 192 scaled up — replace with a proper asset for sharper splash screens. Service worker is intentionally network-first (never serves stale auth/session pages from cache).
 - **GitHub link** — sidebar footer.
 - **Auth footer** — bottom of sidebar shows signed-in user (name + role) with Admin and Sign out links; anonymous users see a Sign in button. Logout redirects to `/` (briefing home).
 - **Admin panel** — pipeline stats (briefings, articles, today's feed, email sub count), source breakdown, user table with read-only email sub status, add/remove users. Dark/light/system theme toggle in header uses same `localStorage` key as main app.
