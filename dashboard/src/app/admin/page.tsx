@@ -46,7 +46,7 @@ export default async function AdminPage() {
 	];
 
 	return (
-		<main className="min-h-screen bg-slate-50 dark:bg-slate-950 px-4 py-12">
+		<main className="min-h-screen bg-slate-50 dark:bg-slate-950 px-4 py-12 page-transition">
 		<div className="max-w-5xl mx-auto space-y-8">
 
 			{/* Header */}

@@ -115,10 +115,16 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 				if (briefings.some(b => b.id === id)) setSelectedId(id);
 			}
 
-			// 'intel-sidebar-v2' key — v1 had stale '0' values from early testing
-			const savedSidebar = localStorage.getItem('intel-sidebar-v2');
-			if (savedSidebar !== null) setSidebarOpen(savedSidebar === '1');
-			else setSidebarOpen(window.innerWidth > 768);
+			// On mobile always start closed (never auto-open from localStorage —
+			// arriving via Link navigation should not blast the sidebar open).
+			// On desktop respect the saved state, defaulting to open.
+			const isMobile = window.innerWidth < 768;
+			if (isMobile) {
+				setSidebarOpen(false);
+			} else {
+				const savedSidebar = localStorage.getItem('intel-sidebar-v2');
+				setSidebarOpen(savedSidebar !== null ? savedSidebar === '1' : true);
+			}
 		} catch { /* storage unavailable */ }
 		setHydrated(true);
 	}, []);
@@ -555,7 +561,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 	// ── Empty state ────────────────────────────────────────────────────────────
 	if (briefings.length === 0) {
 		return (
-			<div className="flex h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
+			<div className="flex h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden page-transition">
 				{sidebar}
 				<main className="flex-1 flex flex-col">
 					{mobileTopBar}
@@ -591,7 +597,7 @@ export default function IntelViewer({ briefings, articles, clusters, feed, email
 
 	// ── Main layout ────────────────────────────────────────────────────────────
 	return (
-		<div className="flex h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
+		<div className="flex h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden page-transition">
 			{sidebar}
 
 			<main className="flex-1 flex flex-col overflow-hidden md:overflow-y-auto print:overflow-visible print:h-auto">
