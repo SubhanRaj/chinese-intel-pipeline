@@ -505,7 +505,7 @@ These are not security vulnerabilities but represent dead surface area that shou
 | 12 | L4 | Admin page `session!` non-null assertions | ✅ Fixed 2026-06-29 — replaced with `session?.` | `dashboard/src/app/admin/page.tsx` |
 | — | L1 | Magic link token in browser history/logs | ⏳ Open — low priority; 15-min expiry + single-use limits exposure window | `dashboard/src/app/auth/verify/` |
 | — | M3 | D1 database ID in public repo | ⏳ Accepted risk — CF access model makes this hard to exploit; repo is public by design | `wrangler.jsonc` files |
-| — | Stale | Delete `ENABLE_EMAIL`, `RESEND_TO_EMAIL` secrets | ⏳ Manual — delete from CF dashboard → scraper-worker → Settings → Variables | CF dashboard |
+| — | Stale | Delete `ENABLE_EMAIL`, `RESEND_TO_EMAIL` secrets | ⏳ Manual — delete from CF dashboard → scraper-worker → Settings → Variables. Note: keep `RESEND_API_KEY` and `RESEND_FROM_EMAIL` — those are active and used for briefing emails. Only `ENABLE_EMAIL` (old kill-switch) and `RESEND_TO_EMAIL` (replaced by D1 user list) are dead. | CF dashboard |
 
 Items 1–3 can be fixed in under 5 minutes combined and eliminate the two critical vulnerabilities and a policy violation.
 
