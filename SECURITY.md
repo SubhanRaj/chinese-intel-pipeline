@@ -107,8 +107,10 @@ No secrets are committed to git. The scraper secret is now set. The most urgent 
 
 - All secrets stored as Cloudflare Wrangler secrets — never in code or git.
 - `.gitignore` covers `.env*` and `.dev.vars*`.
-- `SCRAPER_SECRET` is now set — HTTP pipeline trigger requires Bearer token.
-- Email credentials (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`) are CF secrets on both workers.
+- `SCRAPER_SECRET` is set — HTTP pipeline trigger requires `Authorization: Bearer` token.
+- Email credentials (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`) are CF secrets on **both** workers independently — the scraper uses one key for daily briefing emails; the dashboard (`intel-pipeline`) uses a separate key for magic-link login emails.
+- `SESSION_SECRET` is set on the dashboard worker — generated with `openssl rand -hex 32 | wrangler secret put` so the plaintext value is never exposed in terminal output or shell history.
+- **Worker rename gotcha:** CF secrets are bound to the worker name. Renaming a worker (e.g. `dashboard` → `intel-pipeline`) silently drops all secrets — the new worker starts with none. Always re-apply all secrets after a rename. This caused login emails to break until secrets were manually re-applied to `intel-pipeline`.
 
 ### User-Enumeration Protection
 

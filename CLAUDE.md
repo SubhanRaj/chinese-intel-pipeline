@@ -141,8 +141,10 @@ dashboard/src/components/ThemeToggle.tsx — shared dark/light/system toggle; us
 - `curl` invocations updated to: `curl -H "Authorization: Bearer $SCRAPER_SECRET" <url>`
 
 ### Secrets status
-- Dashboard worker: `SESSION_SECRET` ✓, `RESEND_API_KEY` ✓, `RESEND_FROM_EMAIL` ✓ (`onboarding@resend.dev`)
-- Scraper worker: `RESEND_API_KEY` ✓, `RESEND_FROM_EMAIL` ✓ — `RESEND_TO_EMAIL` no longer used; `SCRAPER_SECRET` not yet set (GET trigger is unprotected)
+- Dashboard worker (`intel-pipeline`): `SESSION_SECRET` ✓, `RESEND_API_KEY` ✓ (login magic-link emails), `RESEND_FROM_EMAIL` ✓ (`onboarding@resend.dev`)
+- Scraper worker (`scraper-worker`): `RESEND_API_KEY` ✓ (daily briefing emails — **separate key from dashboard**), `RESEND_FROM_EMAIL` ✓ — `RESEND_TO_EMAIL` no longer used; `SCRAPER_SECRET` not yet set (GET trigger is unprotected)
+
+> **Gotcha:** Cloudflare secrets are bound to the worker name. If you rename or recreate a worker, secrets do **not** carry over — you must re-apply them to the new worker name manually. This bit us when `dashboard` was renamed to `intel-pipeline`.
 
 ### Email subscriptions (live)
 - Scraper queries `users WHERE email_notifications = 1` and sends briefing to all matching email addresses
@@ -206,11 +208,16 @@ npx wrangler d1 execute intel_briefings_db --remote --command \
 # Check D1 data
 cd scraper-worker && npx wrangler d1 execute intel_briefings_db --remote --command "SELECT ..."
 
-# Set secrets (run once per worker after auth migration)
-cd scraper-worker && npx wrangler secret put SCRAPER_SECRET
-cd dashboard && npx wrangler secret put SESSION_SECRET
-cd dashboard && npx wrangler secret put RESEND_API_KEY
-cd dashboard && npx wrangler secret put RESEND_FROM_EMAIL
+# Set secrets (run once per worker, or re-run if worker is renamed — secrets don't carry over)
+# SESSION_SECRET: generate + pipe directly so the value is never visible in terminal history
+cd scraper-worker && openssl rand -hex 32 | npx wrangler secret put SCRAPER_SECRET
+# For dashboard secrets, use --name to target the worker without cd (avoids path issues)
+openssl rand -hex 32 | npx wrangler secret put SESSION_SECRET --name intel-pipeline
+printf '<resend-api-key>' | npx wrangler secret put RESEND_API_KEY --name intel-pipeline
+printf 'onboarding@resend.dev' | npx wrangler secret put RESEND_FROM_EMAIL --name intel-pipeline
+# Scraper has its own separate RESEND_API_KEY for daily briefing emails
+cd scraper-worker && npx wrangler secret put RESEND_API_KEY
+cd scraper-worker && npx wrangler secret put RESEND_FROM_EMAIL
 
 # Run auth migration (0009)
 npx wrangler d1 execute intel_briefings_db --remote \

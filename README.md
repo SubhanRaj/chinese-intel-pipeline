@@ -513,23 +513,33 @@ npx wrangler d1 migrations apply intel_briefings_db --remote
 
 ### 2. Set Worker secrets
 
-**Scraper worker** (`cd scraper-worker`):
+Secrets are bound to the **worker name** in Cloudflare. If you rename or recreate a worker, you must re-apply all its secrets — they do not carry over automatically.
+
+Use `openssl rand | wrangler secret put` for generated secrets so the value is never printed to your terminal or shell history. Use `printf` (no trailing newline) for known values.
+
+**Scraper worker** (`scraper-worker` — daily briefing emails):
 
 ```bash
-npx wrangler secret put RESEND_API_KEY      # Resend API key for briefing emails
-npx wrangler secret put RESEND_FROM_EMAIL   # Verified sender address in Resend
-npx wrangler secret put SCRAPER_SECRET      # Bearer token to protect the HTTP trigger
+cd scraper-worker
+openssl rand -hex 32 | npx wrangler secret put SCRAPER_SECRET   # Bearer token for HTTP trigger
+npx wrangler secret put RESEND_API_KEY                           # Resend key for briefing emails
+npx wrangler secret put RESEND_FROM_EMAIL                        # Verified sender address
 ```
 
-**Dashboard worker** (`cd dashboard`):
+**Dashboard worker** (`intel-pipeline` — magic-link login emails):
+
+The dashboard uses a **separate** `RESEND_API_KEY` from the scraper (login emails vs briefing emails). `SESSION_SECRET` must be a cryptographically random string — never set it manually.
 
 ```bash
-npx wrangler secret put SESSION_SECRET      # Random 32+ char string for HMAC session signing
-npx wrangler secret put RESEND_API_KEY      # Same Resend key — used for magic-link auth emails
-npx wrangler secret put RESEND_FROM_EMAIL   # Verified sender address
+# Target by name to avoid cd path issues
+openssl rand -hex 32 | npx wrangler secret put SESSION_SECRET --name intel-pipeline
+printf '<your-resend-api-key>' | npx wrangler secret put RESEND_API_KEY --name intel-pipeline
+printf 'onboarding@resend.dev' | npx wrangler secret put RESEND_FROM_EMAIL --name intel-pipeline
 ```
 
-> Email subscriptions are **per-user** — each user toggles from the sidebar. Default for new users: subscribed. There is no global on/off switch.
+> `RESEND_FROM_EMAIL` defaults to `onboarding@resend.dev` (Resend's shared test sender). To use a custom domain, verify it in Resend and update this value.
+
+> Email subscriptions are **per-user** — each user toggles from the customisation panel FAB. Default for new users: subscribed. There is no global on/off switch.
 
 ### 3. Seed the first admin account
 
