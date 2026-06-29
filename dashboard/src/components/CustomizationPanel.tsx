@@ -244,6 +244,15 @@ export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, on
 	const isDark = document.documentElement.classList.contains('dark');
 
 	return (
+		<>
+			{/* Click-outside backdrop — only mounted when panel is open */}
+			{open && (
+				<div
+					className="fixed inset-0 z-20"
+					onClick={() => setOpen(false)}
+					aria-hidden="true"
+				/>
+			)}
 		<div
 			className="fixed right-4 sm:right-6 z-30 flex flex-col items-end gap-2 print:hidden pointer-events-none"
 			style={{ bottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))' }}
@@ -473,5 +482,6 @@ export default function CustomizationPanel({ drawerOpen, isLoggedIn, emailOn, on
 				<IconAdjustments size={18} />
 			</button>
 		</div>
+		</>
 	);
 }

@@ -195,6 +195,13 @@ html[data-rw="wide"]   { --reading-width: 64rem; }
   font-family: var(--reading-font-family);
 }
 
+/* Override Tailwind leading-* utilities (specificity 0,1,0) on body text.
+   Class+element (0,1,1) wins without !important. Headings keep their own leading. */
+.reading-content p,
+.reading-content li {
+  line-height: var(--reading-lh);
+}
+
 /* Warm beige/cream tint on all light-mode surfaces */
 html:not(.dark) {
   background-color: oklch(0.972 0.013 78);

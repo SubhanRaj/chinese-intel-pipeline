@@ -1148,7 +1148,7 @@ function ClusterDrawer({ state, onClose, onPreserveAll, onDeleteAll, onUnpreserv
 				</div>
 
 				{/* Drawer body */}
-				<div className="flex-1 overflow-y-auto px-5 sm:px-7 py-7 space-y-8">
+				<div className="flex-1 overflow-y-auto px-5 sm:px-7 py-7 space-y-8 reading-content">
 					{cluster && (
 						<>
 							{/* Synthesised headline + combined summary */}
@@ -1513,7 +1513,7 @@ function ArticleDrawer({ article, onClose, onPreserve, onUnpreserveAndDelete }: 
 					</div>
 				</div>
 
-				<div className="flex-1 overflow-y-auto px-5 sm:px-7 py-7 space-y-7">
+				<div className="flex-1 overflow-y-auto px-5 sm:px-7 py-7 space-y-7 reading-content">
 					{article && (
 						<>
 							<div className="space-y-2">
