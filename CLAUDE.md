@@ -141,15 +141,16 @@ dashboard/src/components/ThemeToggle.tsx — shared dark/light/system toggle; us
 - All mutations (`togglePreserve`, `deleteArticle`, `deleteCluster`, etc.) call `requireAuth()` before executing
 - Magic link token hash: SHA-256 in D1. Plaintext token only exists in the email link and in-browser URL — never stored
 
-### Scraper protection (planned)
-- New `SCRAPER_SECRET` CF secret on the scraper worker
-- HTTP GET trigger: requires `Authorization: Bearer <SCRAPER_SECRET>` header
+### Scraper protection (live)
+- `SCRAPER_SECRET` CF secret set on the scraper worker ✓
+- HTTP GET trigger: requires `Authorization: Bearer <SCRAPER_SECRET>` header — hard-fails 401 if secret is missing or wrong (no soft guard)
 - Cron trigger: bypasses check (internal, already protected by CF)
-- `curl` invocations updated to: `curl -H "Authorization: Bearer $SCRAPER_SECRET" <url>`
+- Constant-time XOR comparison used (same pattern as dashboard session auth)
+- `curl` invocations: `curl -H "Authorization: Bearer $SCRAPER_SECRET" <url>`
 
 ### Secrets status
 - Dashboard worker (`intel-pipeline`): `SESSION_SECRET` ✓, `RESEND_API_KEY` ✓ (login magic-link emails), `RESEND_FROM_EMAIL` ✓ (`onboarding@resend.dev`)
-- Scraper worker (`scraper-worker`): `RESEND_API_KEY` ✓ (daily briefing emails — **separate key from dashboard**), `RESEND_FROM_EMAIL` ✓ — `RESEND_TO_EMAIL` no longer used; `SCRAPER_SECRET` not yet set (GET trigger is unprotected)
+- Scraper worker (`scraper-worker`): `RESEND_API_KEY` ✓ (daily briefing emails — **separate key from dashboard**), `RESEND_FROM_EMAIL` ✓, `SCRAPER_SECRET` ✓ (HTTP trigger protected) — `RESEND_TO_EMAIL` no longer used
 
 > **Gotcha:** Cloudflare secrets are bound to the worker name. If you rename or recreate a worker, secrets do **not** carry over — you must re-apply them to the new worker name manually. This bit us when `dashboard` was renamed to `intel-pipeline`.
 

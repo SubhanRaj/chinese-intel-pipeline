@@ -117,8 +117,8 @@ Show `(12)` next to each date in the sidebar. One extra field in the page query.
 **Scraper status panel in `/admin`**
 Table showing `source → articles scraped today` vs. expected count (~6–9 per source). Surfaces silent scraper failures without needing to check Cloudflare logs. Zero new infra — reads from `temp_articles` counts grouped by source. Each row shows: source name, expected count, actual count, status indicator (ok / low / missing).
 
-**`SCRAPER_SECRET` on HTTP trigger**
-HTTP GET trigger is currently unprotected — anyone with the URL can trigger a scraper run. Add `Authorization: Bearer <SCRAPER_SECRET>` check (cron bypasses it as it's CF-internal). Generate and deploy: `openssl rand -hex 32 | npx wrangler secret put SCRAPER_SECRET`. Update all `curl` invocations in docs and scripts.
+**~~`SCRAPER_SECRET` on HTTP trigger~~** ✅ Done (2026-06-29)
+Secret set; hard-fail 401 when missing (no soft guard); constant-time XOR comparison. Cron bypasses the check (CF-internal).
 
 ### Medium Priority
 

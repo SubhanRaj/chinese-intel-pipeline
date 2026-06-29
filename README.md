@@ -414,7 +414,7 @@ Current keys: `email_enabled` — deprecated, no longer used. Email is now fully
 
 **Admin panel (`/admin`):** Pipeline stats (briefings, articles, email sub count), source breakdown, user list with read-only email sub status (users control their own), add/remove users, dark/light/system theme toggle. Plain Tailwind — same CSS tokens and patterns as main app.
 
-**Scraper protection (not yet enabled):** HTTP trigger will require `Authorization: Bearer <SCRAPER_SECRET>`. Cron trigger is already protected by CF scheduler. `SCRAPER_SECRET` secret not yet set.
+**Scraper protection (live):** HTTP trigger requires `Authorization: Bearer <SCRAPER_SECRET>`. Hard-fails 401 if the secret is missing or wrong — no soft guard. Constant-time XOR comparison used. Cron trigger bypasses the check (CF scheduler, internal). `SCRAPER_SECRET` is set as a CF secret on the scraper worker.
 
 ### Protections
 
