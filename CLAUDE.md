@@ -180,6 +180,7 @@ dashboard/src/components/ThemeToggle.tsx — shared dark/light/system toggle; us
 - Don't set `max_tokens` > (24000 − expected_input_tokens − 500). Current safe ceiling is 14,000.
 - Don't add a BROWSER binding back — Puppeteer was removed 2026-06-27 intentionally.
 - Don't use `dangerouslySetInnerHTML` anywhere in the dashboard.
+- Don't use `<a href="...">` for internal navigation — always use Next.js `<Link>`. A plain anchor forces a full browser reload (page flash, browser loading bar, all React state lost). `<Link>` keeps the app alive and transitions client-side.
 - Don't commit `.env` or Wrangler secrets to git — stored as Wrangler secrets only.
 - Don't move the temp_articles DELETE back to before the AI call — it was intentionally moved after Pass 1 to preserve feed data on AI failures.
 - Don't expose auth tokens or session IDs in plaintext in D1 — always store as SHA-256 hashes.
