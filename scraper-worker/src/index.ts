@@ -13,6 +13,14 @@ export interface Env {
 	RESEND_FROM_EMAIL: string;
 }
 
+// Constant-time string comparison — prevents timing side-channel on bearer token check
+function timingSafeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	let diff = 0;
+	for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	return diff === 0;
+}
+
 // ---------- date helpers ----------
 
 function getCSTDateParts(): { yyyy: string; mm: string; dd: string } {
@@ -945,12 +953,18 @@ export default {
 	// Protected by SCRAPER_SECRET bearer token when the secret is configured.
 	// To force a re-run: delete today's temp_articles via wrangler, then curl again.
 	async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-		// Bearer token guard — only enforced when SCRAPER_SECRET is set as a CF secret
-		if (env.SCRAPER_SECRET) {
-			const auth = request.headers.get('Authorization') ?? '';
-			if (auth !== `Bearer ${env.SCRAPER_SECRET}`) {
-				return new Response('Unauthorized', { status: 401 });
-			}
+		// Bearer token guard — always enforced. If SCRAPER_SECRET is not set as a CF secret,
+		// the endpoint hard-fails rather than silently allowing all traffic (soft-guard risk).
+		if (!env.SCRAPER_SECRET) {
+			console.error('[AUTH] FATAL: SCRAPER_SECRET not configured — HTTP trigger blocked');
+			return new Response('Unauthorized', { status: 401 });
+		}
+		const auth = request.headers.get('Authorization') ?? '';
+		const expected = `Bearer ${env.SCRAPER_SECRET}`;
+		// Constant-time comparison — prevents timing side-channel (consistent with dashboard session auth)
+		if (!timingSafeEqual(auth, expected)) {
+			console.warn('[AUTH] Rejected request — bad or missing Authorization header');
+			return new Response('Unauthorized', { status: 401 });
 		}
 		try {
 			const result = await runPipeline(env, false);
