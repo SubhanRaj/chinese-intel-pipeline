@@ -48,28 +48,28 @@ export default async function AdminPage() {
 		<main className="min-h-screen bg-slate-50 dark:bg-slate-950 px-4 py-12">
 		<div className="max-w-5xl mx-auto space-y-8">
 
-			{/* Header — same pattern as login/verify pages */}
-			<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-				<div>
-					<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-1">
-						Intelligence Monitor
-					</p>
+			{/* Header */}
+			<div>
+				<p className="text-xs font-bold tracking-widest uppercase text-red-600 dark:text-red-500 mb-1">
+					Intelligence Monitor
+				</p>
+				<div className="flex items-center justify-between gap-3">
 					<h1 className="text-3xl font-semibold text-slate-900 dark:text-slate-100">
 						Admin Panel
 					</h1>
-					<p className="text-base text-slate-500 dark:text-slate-400 mt-1">
-						Signed in as {session!.name} · {session!.email}
-					</p>
+					<div className="flex items-center gap-2 shrink-0">
+						<ThemeToggle />
+						<a
+							href="/"
+							className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap"
+						>
+							← Briefings
+						</a>
+					</div>
 				</div>
-				<div className="flex items-center gap-2 sm:mt-1 shrink-0">
-					<ThemeToggle />
-					<a
-						href="/"
-						className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap"
-					>
-						← Dashboard
-					</a>
-				</div>
+				<p className="text-base text-slate-500 dark:text-slate-400 mt-1">
+					Signed in as {session!.name} · {session!.email}
+				</p>
 			</div>
 
 			{/* Pipeline Stats */}
@@ -110,8 +110,8 @@ export default async function AdminPage() {
 				<p className="text-xs font-bold tracking-widest uppercase text-slate-500 dark:text-slate-400 mb-3">
 					Users
 				</p>
-				<div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mb-2">
-					<table className="w-full text-sm">
+				<div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm mb-2 overflow-x-auto">
+					<table className="w-full text-sm min-w-[560px]">
 						<thead>
 							<tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
 								<th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Name</th>
