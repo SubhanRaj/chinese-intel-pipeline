@@ -6,6 +6,7 @@ import { getSession } from '@/lib/auth';
 import { addUser, removeUser, revokeUserSessions } from './actions';
 import AddUserForm from './AddUserForm';
 import ThemeToggle from '@/components/ThemeToggle';
+import Link from 'next/link';
 
 export default async function AdminPage() {
 	const session = await getSession();
@@ -59,12 +60,12 @@ export default async function AdminPage() {
 					</h1>
 					<div className="flex items-center gap-2 shrink-0">
 						<ThemeToggle />
-						<a
+						<Link
 							href="/"
 							className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap"
 						>
 							← Briefings
-						</a>
+						</Link>
 					</div>
 				</div>
 				<p className="text-base text-slate-500 dark:text-slate-400 mt-1">
