@@ -1,6 +1,8 @@
-# Chinese Intel Pipeline
-
-An automated intelligence extraction pipeline that scrapes Chinese provincial newspapers every morning, analyses and translates content with Cloudflare Workers AI (Llama 3.3 70B), clusters same-topic stories across sources, and serves structured English briefings through an interactive Next.js dashboard with daily email dispatch.
+<div align="center">
+  <img src="dashboard/public/favicon.svg" width="96" height="96" alt="Chinese Intel Monitor logo — 情" />
+  <h1>Chinese Intel Pipeline</h1>
+  <p>An automated intelligence extraction pipeline that scrapes Chinese provincial newspapers every morning, analyses and translates content with Cloudflare Workers AI (Llama 3.3 70B), clusters same-topic stories across sources, and serves structured English briefings through an interactive Next.js dashboard with daily email dispatch.</p>
+</div>
 
 ## Architecture
 
