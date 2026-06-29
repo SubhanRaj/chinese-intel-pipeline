@@ -66,6 +66,7 @@ export default function RootLayout({
 				/>
 				{/* Inline script — runs synchronously before first paint: applies dark mode + reading prefs */}
 				<Script id="theme-init" strategy="beforeInteractive">{`(function(){try{var t=localStorage.getItem('intel-theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark');var p=JSON.parse(localStorage.getItem('intel-reading-prefs-v1')||'{}');var r=document.documentElement;if(p.fontSize&&p.fontSize!=='base')r.setAttribute('data-rs',p.fontSize);if(p.lineHeight&&p.lineHeight!=='comfortable')r.setAttribute('data-rlh',p.lineHeight);if(p.readingWidth&&p.readingWidth!=='medium')r.setAttribute('data-rw',p.readingWidth);if(p.accent&&p.accent!=='red')r.setAttribute('data-accent',p.accent)}catch(e){}})();`}</Script>
+				<Script id="sw-register" strategy="lazyOnload">{`if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js');}`}</Script>
 			</head>
 			<body className="antialiased">
 				{children}
