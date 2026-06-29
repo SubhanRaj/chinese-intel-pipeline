@@ -1,5 +1,7 @@
 # Chinese Intel Pipeline — Claude Context
 
+> For a full feature inventory, planned work, gaps, and rejected ideas see [ROADMAP.md](ROADMAP.md).
+
 ## What this project is
 
 Automated pipeline that scrapes 7 Chinese provincial newspapers every morning (09:30 CST via cron), runs two AI passes with Llama 3.3 70B on Cloudflare Workers AI, clusters related stories, and serves structured English intelligence briefings through a Next.js dashboard with daily email dispatch.

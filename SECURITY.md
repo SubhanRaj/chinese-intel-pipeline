@@ -562,3 +562,7 @@ The following are intentionally out of scope per CLAUDE.md:
 ---
 
 *This document should be reviewed and updated after each significant auth or infrastructure change.*
+
+---
+
+See [ROADMAP.md](ROADMAP.md) for planned security-adjacent improvements (rate limiting, session management, HTTP headers evolution) alongside the full feature roadmap.

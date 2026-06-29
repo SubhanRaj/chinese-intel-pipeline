@@ -589,6 +589,12 @@ npx wrangler d1 execute intel_briefings_db --remote --command \
 
 ---
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for a full picture of what's shipped, every identified gap, all planned features (High / Medium / Lower priority), features that were considered and set aside with reasons, and the hard architecture constraints.
+
+---
+
 ## Tech stack
 
 | Layer | Technology |
